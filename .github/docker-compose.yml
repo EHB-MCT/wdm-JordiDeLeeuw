@@ -1,0 +1,33 @@
+services:
+  frontend:
+    #bouw de frontend container met de dockerfile in de map front-end
+    build: ./front-end
+    #koppel poort 5173 van de container aan poort 5173 op je computer
+    ports:
+      - "5173:5173"
+    #synchroniseer de lokale map met de container zodat wijzigingen direct zichtbaar zijn
+    #de tweede regel zorgt dat node_modules binnen de container blijft en niet lokaal
+    volumes:
+      - ./front-end:/app
+      - /app/node_modules
+    #verbind de frontend met hetzelfde netwerk als de backend
+    networks:
+      - app-network 
+  backend:
+    #bouw de backend container met de dockerfile in de map back-end
+    build: ./back-end
+    #koppel poort 5000 in de container aan poort 5050 op je computer
+    ports:
+      - "5050:5000"
+    #synchroniseer de lokale map met de container zodat je code direct updatet
+    volumes:
+      - ./back-end:/app
+    #verbind de backend met hetzelfde netwerk als de frontend
+    networks:
+      - app-network
+
+#definieer het netwerk waar beide containers in zitten
+networks:
+  app-network:
+    #bridge betekent dat docker een intern netwerk aanmaakt waar containers met elkaar kunnen praten
+    driver: bridge
