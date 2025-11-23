@@ -5,7 +5,7 @@ FROM node:20.19.0
 WORKDIR /app
 
 #kopieer de package-bestanden en installeer de nodige dependencies
-COPY package*.json ./
+COPY package.json ./
 RUN npm install -g vite && npm install
 
 #kopieer de rest van het project naar de container

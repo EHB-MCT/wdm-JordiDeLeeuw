@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 #installeer tesseract ocr, nodig voor tekstherkenning
-RUN apt-get update && apt-get install -y tesseract-ocr 
+RUN apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-nld && apt-get clean
 
 #maak en stel de werkmap in binnen de container
 WORKDIR /app

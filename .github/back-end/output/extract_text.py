@@ -5,24 +5,44 @@ from PIL import Image
 #maakt een flask app aan
 app = Flask(__name__)
 
-#deze route wordt gebruikt om tekst uit een afbeelding te halen
+#deze route wordt gebruikt om tekst uit één of meerdere afbeeldingen te halen
 @app.route("/api/extract", methods=["POST"])
 def extract_text():
-    #controleert of er een bestand is meegestuurd in de request
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
+    #kijk of er minstens één bestand is meegestuurd
+    if "file" in request.files:
+        #één bestand met key "file"
+        files = [request.files["file"]]
+    elif "files" in request.files:
+        #meerdere bestanden met key "files"
+        files = request.files.getlist("files")
+    else:
+        return jsonify({"error": "no file(s) uploaded"}), 400
 
-    #pakt het bestand uit de request
-    file = request.files["file"]
+    results = []
 
+    for i, f in enumerate(files, start=1):
     #opent het bestand als afbeelding met pillow
-    image = Image.open(file.stream)
+        img = Image.open(f.stream)
 
-    #laat pytesseract de tekst uit de afbeelding halen
-    text = pytesseract.image_to_string(image)
+    #haalt tekst uit de afbeelding, in engels en nederlands met pytesseract
+        raw_text = pytesseract.image_to_string(img, lang="eng+nld")
 
-    #stuurt de gevonden tekst terug als json
-    return jsonify({"extracted_text": text})
+    #maakt de tekst proper: verwijdert extra newlines en dubbele spaties
+        clean_text = " ".join(raw_text.split())
+
+    #object per screenshot
+        results.append({
+            "index": i,
+            "filename": f.filename,
+            "text": clean_text,
+        })
+
+#als er maar één afbeelding was, stuur gewoon één object terug
+    if len(results) == 1:
+        return jsonify(results[0])
+
+#bij meerdere afbeeldingen een lijst terugsturen
+    return jsonify({"screenshots": results})
 
 #simpele test route om te checken of de backend werkt
 @app.route("/api/test")
@@ -31,4 +51,4 @@ def test():
 
 #start de flask app als dit bestand direct wordt uitgevoerd
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=True)
