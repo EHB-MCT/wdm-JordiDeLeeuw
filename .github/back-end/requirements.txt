@@ -6,3 +6,5 @@ flask
 pytesseract
 #python image library (PIL) nodig om afbeeldingen te openen in te lezen en door te geven aan pytesseract
 Pillow
+#mongo db driver om met mongodb te communiceren
+pymongo

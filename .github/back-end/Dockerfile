@@ -18,4 +18,4 @@ COPY . .
 EXPOSE 5000
 
 #start het python script wanneer de container opstart
-CMD ["python3", "output/extract_text.py"]
+CMD ["python3", "output/app.py"]

@@ -12,7 +12,7 @@ services:
       - /app/node_modules
     #verbind de frontend met hetzelfde netwerk als de backend
     networks:
-      - app-network 
+      - app-network
   backend:
     #bouw de backend container met de dockerfile in de map back-end
     build: ./back-end
@@ -26,8 +26,23 @@ services:
     networks:
       - app-network
 
+  mongo:
+    #mongodb database service voor users (login/register)
+    image: mongo:7
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - app-network
+
 #definieer het netwerk waar beide containers in zitten
 networks:
   app-network:
     #bridge betekent dat docker een intern netwerk aanmaakt waar containers met elkaar kunnen praten
     driver: bridge
+
+volumes:
+  mongo-data:
+    #volume om de mongodb data te bewaren
