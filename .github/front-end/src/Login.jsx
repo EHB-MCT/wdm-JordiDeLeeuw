@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import "./App.css";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5050";
+const API_BASE = "";
 
 export function Login() {
 	const { login } = useAuth();
