@@ -8,3 +8,5 @@ pytesseract
 Pillow
 #mongo db driver om met mongodb te communiceren
 pymongo
+#bcrypt voor veilige wachtwoord hashing
+bcrypt

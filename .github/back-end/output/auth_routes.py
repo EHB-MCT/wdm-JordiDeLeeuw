@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from auth_backend import get_user_by_email, create_user
+from auth_backend import get_user_by_email, create_user, verify_password
 
 #maakt een blueprint aan voor auth-routes
 auth_bp = Blueprint("auth", __name__)
@@ -50,11 +50,12 @@ def login():
     if not user:
         return jsonify({"error": "user niet gevonden"}), 400
 
-    if user.get("password") != password:
+    if not verify_password(password, user.get("password")):
         return jsonify({"error": "verkeerd wachtwoord"}), 400
 
     #hier zou normaal een token of session komen
     return jsonify({
         "message": "login gelukt",
+        "userId": str(user["_id"]),
         "email": email,
     }), 200
