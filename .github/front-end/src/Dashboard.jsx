@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import "./Dashboard.css";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5050";
+const API_BASE = "";
 
 export function Dashboard() {
 	const { user, logout } = useAuth();
@@ -20,6 +20,7 @@ export function Dashboard() {
 	const [showProcessingModal, setShowProcessingModal] = useState(false);
 	const [processingStatus, setProcessingStatus] = useState([]);
 	const [isProcessing, setIsProcessing] = useState(false);
+	const [locationOptIn, setLocationOptIn] = useState(false);
 	const pollIntervalRef = useRef(null);
 	const renderCountRef = useRef(0);
 
@@ -114,6 +115,10 @@ export function Dashboard() {
 			files.forEach((file) => {
 				formData.append("files", file);
 			});
+			formData.append("locationOptIn", locationOptIn.toString());
+
+			console.log("Uploading to:", `${API_BASE}/api/photos`);
+			console.log("User ID:", user.userId);
 
 			const res = await fetch(`${API_BASE}/api/photos`, {
 				method: "POST",
@@ -123,11 +128,18 @@ export function Dashboard() {
 				body: formData,
 			});
 
+			console.log("Response status:", res.status, res.statusText);
+			console.log("Content-Type:", res.headers.get("content-type"));
+
+			const responseText = await res.text();
+			console.log("Response body:", responseText);
+
 			let data;
 			try {
-				data = await res.json();
-			} catch {
-				data = { error: "Invalid response from server" };
+				data = JSON.parse(responseText);
+			} catch (e) {
+				console.error("Failed to parse JSON:", e);
+				data = { error: `Invalid response from server (not JSON). Status: ${res.status}. Body: ${responseText.substring(0, 200)}` };
 			}
 
 			if (res.ok) {
@@ -396,6 +408,16 @@ export function Dashboard() {
 							))}
 						</div>
 					)}
+
+					<label className="location-optin-label">
+						<input 
+							type="checkbox" 
+							checked={locationOptIn} 
+							onChange={(e) => setLocationOptIn(e.target.checked)}
+							className="location-optin-checkbox"
+						/>
+						<span>Include GPS location data (if available in photos)</span>
+					</label>
 
 					<button type="submit" className="upload-btn" disabled={uploading || files.length === 0}>
 						{uploading ? "Uploaden..." : "Upload"}

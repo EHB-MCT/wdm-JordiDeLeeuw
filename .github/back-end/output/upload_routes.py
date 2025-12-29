@@ -5,6 +5,7 @@ import pytesseract
 from PIL import Image
 import tempfile
 import os
+import time
 
 upload_bp = Blueprint("upload", __name__)
 
@@ -16,163 +17,261 @@ def check_auth(request):
 
 @upload_bp.route("/api/photos", methods=["POST"])
 def upload_photos():
-    user_id = check_auth(request)
-    if not user_id:
-        return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+    try:
+        print("Upload endpoint called")
+        user_id = check_auth(request)
+        if not user_id:
+            print("Upload failed: No user ID")
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
 
-    if "files" not in request.files:
-        return jsonify({"error": "No files uploaded"}), 400
+        print(f"User ID: {user_id}")
 
-    files = request.files.getlist("files")
-    
-    if len(files) == 0:
-        return jsonify({"error": "No files selected"}), 400
+        if "files" not in request.files:
+            print("Upload failed: No files in request")
+            return jsonify({"error": "No files uploaded"}), 400
 
-    uploaded_photos = []
+        files = request.files.getlist("files")
+        location_opt_in = request.form.get("locationOptIn", "false").lower() == "true"
+        
+        print(f"Files received: {len(files)}, Location opt-in: {location_opt_in}")
+        
+        if len(files) == 0:
+            print("Upload failed: No files selected")
+            return jsonify({"error": "No files selected"}), 400
 
-    for file in files:
-        if file.filename == "":
-            continue
+        uploaded_photos = []
 
-        image_data = file.read()
-        mime_type = file.mimetype or "image/jpeg"
-        size = len(image_data)
+        for file in files:
+            if file.filename == "":
+                continue
 
-        photo_id = auth_backend.save_photo(
-            user_id=user_id,
-            filename=file.filename,
-            mime_type=mime_type,
-            size=size,
-            image_data=image_data,
-        )
+            try:
+                print(f"Processing file: {file.filename}")
+                image_data = file.read()
+                mime_type = file.mimetype or "image/jpeg"
+                print(f"File read: {len(image_data)} bytes, MIME type: {mime_type}")
 
-        uploaded_photos.append({
-            "id": str(photo_id),
-            "filename": file.filename,
-            "size": size,
-        })
+                photo_id = auth_backend.save_photo(
+                    user_id=user_id,
+                    original_filename=file.filename,
+                    image_data=image_data,
+                    mime_type=mime_type,
+                    location_opt_in=location_opt_in,
+                )
 
-    return jsonify({
-        "message": f"{len(uploaded_photos)} foto(s) succesvol geüpload",
-        "photos": uploaded_photos,
-    }), 200
+                print(f"Photo saved with ID: {photo_id}")
+                uploaded_photos.append({
+                    "id": str(photo_id),
+                    "originalFilename": file.filename,
+                })
+            except Exception as e:
+                print(f"Failed to upload {file.filename}: {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({
+                    "error": f"Failed to upload {file.filename}",
+                    "details": str(e)
+                }), 500
+
+        print(f"Upload complete: {len(uploaded_photos)} photos uploaded")
+        return jsonify({
+            "message": f"{len(uploaded_photos)} foto(s) succesvol geüpload",
+            "photos": uploaded_photos,
+        }), 201
+    except Exception as e:
+        print(f"Upload endpoint error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Upload failed",
+            "details": str(e)
+        }), 500
 
 @upload_bp.route("/api/photos", methods=["GET"])
 def get_photos():
-    user_id = check_auth(request)
-    if not user_id:
-        return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+    try:
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
 
-    photos = auth_backend.get_user_photos(user_id)
-    
-    return jsonify({
-        "photos": photos,
-        "count": len(photos),
-    }), 200
+        photos = auth_backend.get_user_photos(user_id)
+        
+        return jsonify({
+            "photos": photos,
+            "count": len(photos),
+        }), 200
+    except Exception as e:
+        print(f"Get photos error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Failed to retrieve photos",
+            "details": str(e)
+        }), 500
 
 @upload_bp.route("/api/photos/<photo_id>/file", methods=["GET"])
 def get_photo_file(photo_id):
-    user_id = check_auth(request)
-    if not user_id:
-        return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+    try:
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
 
-    photo = auth_backend.get_photo_by_id(photo_id, user_id)
-    
-    if not photo:
-        return jsonify({"error": "Photo not found or access denied"}), 404
+        photo = auth_backend.get_photo_by_id(photo_id, user_id)
+        
+        if not photo:
+            return jsonify({"error": "Photo not found or access denied"}), 404
 
-    return send_file(
-        BytesIO(photo["imageData"]),
-        mimetype=photo["mimeType"],
-        as_attachment=False,
-        download_name=f"photo_{photo_id}",
-    )
+        return send_file(
+            BytesIO(photo["imageData"]),
+            mimetype=photo["mimeType"],
+            as_attachment=False,
+            download_name=f"photo_{photo_id}",
+        )
+    except Exception as e:
+        print(f"Get photo file error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Failed to retrieve photo file",
+            "details": str(e)
+        }), 500
 
 @upload_bp.route("/api/photos/process-all", methods=["POST"])
 def process_all_photos():
-    user_id = check_auth(request)
-    if not user_id:
-        return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+    try:
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
 
-    photos_to_process = auth_backend.get_photos_for_processing(user_id)
-    
-    if len(photos_to_process) == 0:
-        return jsonify({"error": "Geen foto&apos;s om te verwerken"}), 400
+        photos_to_process = auth_backend.get_photos_for_processing(user_id)
+        
+        if len(photos_to_process) == 0:
+            return jsonify({"error": "Geen foto's om te verwerken"}), 400
 
-    photo_ids = [str(photo["_id"]) for photo in photos_to_process]
-    
-    for photo_id in photo_ids:
-        auth_backend.update_photo_status(photo_id, "received")
+        photo_ids = [str(photo["_id"]) for photo in photos_to_process]
+        
+        for photo_id in photo_ids:
+            auth_backend.update_photo_status(photo_id, "received")
 
-    import threading
-    def process_photos_background():
-        for photo in photos_to_process:
-            photo_id = str(photo["_id"])
-            
-            try:
-                auth_backend.update_photo_status(photo_id, "extracting")
-                
-                image_data = photo["imageData"]
-                
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
-                    temp_file.write(image_data)
-                    temp_path = temp_file.name
+        import threading
+        def process_photos_background():
+            for photo in photos_to_process:
+                photo_id = str(photo["_id"])
                 
                 try:
-                    img = Image.open(temp_path)
-                    raw_text = pytesseract.image_to_string(img, lang="eng+nld")
-                    extracted_text = " ".join(raw_text.split())
+                    auth_backend.update_photo_status(photo_id, "extracting")
                     
-                    auth_backend.update_photo_status(photo_id, "done", extracted_text=extracted_text)
-                finally:
-                    os.unlink(temp_path)
+                    image_data = photo["imageStorage"]["imageData"]
                     
-            except Exception as e:
-                error_message = str(e)
-                auth_backend.update_photo_status(photo_id, "error", error_message=error_message)
+                    start_time = time.time()
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+                        temp_file.write(image_data)
+                        temp_path = temp_file.name
+                    
+                    try:
+                        img = Image.open(temp_path)
+                        raw_text = pytesseract.image_to_string(img, lang="eng+nld")
+                        extracted_text = " ".join(raw_text.split())
+                        
+                        processing_duration = int((time.time() - start_time) * 1000)
+                        text_length = len(extracted_text)
+                        line_count = len(raw_text.split('\n'))
+                        
+                        processing_meta = {
+                            "textLength": text_length,
+                            "lineCount": line_count,
+                            "processingDurationMs": processing_duration,
+                        }
+                        
+                        auth_backend.update_photo_status(photo_id, "done", extracted_text=extracted_text, processing_meta=processing_meta)
+                    finally:
+                        os.unlink(temp_path)
+                        
+                except Exception as e:
+                    error_message = str(e)
+                    auth_backend.update_photo_status(photo_id, "error", error_message=error_message)
 
-    thread = threading.Thread(target=process_photos_background)
-    thread.start()
+        thread = threading.Thread(target=process_photos_background)
+        thread.start()
 
-    return jsonify({
-        "message": f"Verwerken van {len(photo_ids)} foto('s) gestart",
-        "photoIds": photo_ids,
-        "total": len(photo_ids),
-    }), 202
+        return jsonify({
+            "message": f"Verwerken van {len(photo_ids)} foto('s) gestart",
+            "photoIds": photo_ids,
+            "total": len(photo_ids),
+        }), 202
+    except Exception as e:
+        print(f"Process all photos error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Failed to process photos",
+            "details": str(e)
+        }), 500
 
 @upload_bp.route("/api/photos/status", methods=["GET"])
 def get_photos_status():
-    user_id = check_auth(request)
-    if not user_id:
-        return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+    try:
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
 
-    photos = auth_backend.get_user_photos(user_id)
-    
-    status_list = [
-        {
-            "id": photo["id"],
-            "filename": photo["filename"],
-            "status": photo["status"],
-            "extractedText": photo.get("extractedText"),
-            "errorMessage": photo.get("errorMessage"),
-        }
-        for photo in photos
-    ]
-    
-    return jsonify({
-        "photos": status_list,
-        "total": len(status_list),
-    }), 200
+        photos = auth_backend.get_photos_status(user_id)
+        
+        return jsonify({
+            "photos": photos,
+            "total": len(photos),
+        }), 200
+    except Exception as e:
+        print(f"Get photos status error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Failed to retrieve photos status",
+            "details": str(e)
+        }), 500
 
 @upload_bp.route("/api/photos", methods=["DELETE"])
 def delete_all_photos():
-    user_id = check_auth(request)
-    if not user_id:
-        return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+    try:
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
 
-    deleted_count = auth_backend.delete_user_photos(user_id)
-    
-    return jsonify({
-        "deletedCount": deleted_count,
-        "message": f"{deleted_count} foto('s) verwijderd",
-    }), 200
+        deleted_count = auth_backend.delete_user_photos(user_id)
+        
+        return jsonify({
+            "deletedCount": deleted_count,
+            "message": f"{deleted_count} foto('s) verwijderd",
+        }), 200
+    except Exception as e:
+        print(f"Delete photos error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Failed to delete photos",
+            "details": str(e)
+        }), 500
+
+@upload_bp.route("/api/admin/migrate-photos", methods=["POST"])
+def migrate_photos():
+    #admin endpoint to run migration for missing originalFilename fields
+    try:
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+
+        updated_count = auth_backend.migrate_missing_original_filenames()
+        
+        return jsonify({
+            "message": f"Migration complete: {updated_count} photos updated",
+            "updatedCount": updated_count,
+        }), 200
+    except Exception as e:
+        print(f"Migration error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Migration failed",
+            "details": str(e)
+        }), 500

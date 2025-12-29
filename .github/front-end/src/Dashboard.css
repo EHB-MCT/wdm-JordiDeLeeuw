@@ -159,6 +159,22 @@
 	cursor: not-allowed;
 }
 
+.location-optin-label {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.85rem;
+	color: #ccc;
+	margin-top: 0.5rem;
+	cursor: pointer;
+}
+
+.location-optin-checkbox {
+	width: 16px;
+	height: 16px;
+	cursor: pointer;
+}
+
 .response-box {
 	margin-top: 1.5rem;
 	padding: 1rem;
