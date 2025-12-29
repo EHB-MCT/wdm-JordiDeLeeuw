@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import "./Dashboard.css";
@@ -12,6 +12,59 @@ export function Dashboard() {
 	const [uploading, setUploading] = useState(false);
 	const [response, setResponse] = useState(null);
 	const [showProfileMenu, setShowProfileMenu] = useState(false);
+	const [photos, setPhotos] = useState([]);
+	const [loadingPhotos, setLoadingPhotos] = useState(true);
+	const [imageUrls, setImageUrls] = useState({});
+
+	useEffect(() => {
+		fetchPhotos();
+		return () => {
+			Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
+		};
+	}, []);
+
+	const fetchPhotos = async () => {
+		setLoadingPhotos(true);
+		try {
+			const res = await fetch(`${API_BASE}/api/photos`, {
+				headers: {
+					"X-User-Id": user.userId,
+				},
+			});
+
+			if (res.ok) {
+				const data = await res.json();
+				const photosList = data.photos || [];
+				setPhotos(photosList);
+
+				for (const photo of photosList) {
+					fetchImageBlob(photo.id);
+				}
+			}
+		} catch (error) {
+			console.error("Failed to fetch photos:", error);
+		} finally {
+			setLoadingPhotos(false);
+		}
+	};
+
+	const fetchImageBlob = async (photoId) => {
+		try {
+			const res = await fetch(`${API_BASE}/api/photos/${photoId}/file`, {
+				headers: {
+					"X-User-Id": user.userId,
+				},
+			});
+
+			if (res.ok) {
+				const blob = await res.blob();
+				const url = URL.createObjectURL(blob);
+				setImageUrls(prev => ({ ...prev, [photoId]: url }));
+			}
+		} catch (error) {
+			console.error("Failed to fetch image blob:", error);
+		}
+	};
 
 	const handleFileChange = (e) => {
 		setFiles(Array.from(e.target.files));
@@ -35,7 +88,7 @@ export function Dashboard() {
 				formData.append("files", file);
 			});
 
-			const res = await fetch(`${API_BASE}/api/upload`, {
+			const res = await fetch(`${API_BASE}/api/photos`, {
 				method: "POST",
 				headers: {
 					"X-User-Id": user.userId,
@@ -54,6 +107,7 @@ export function Dashboard() {
 				setResponse({ success: true, data });
 				setFiles([]);
 				document.getElementById("file-input").value = "";
+				fetchPhotos();
 			} else {
 				setResponse({ success: false, data });
 			}
@@ -129,6 +183,37 @@ export function Dashboard() {
 						<pre>{JSON.stringify(response.data, null, 2)}</pre>
 					</div>
 				)}
+			</div>
+
+			<div className="photos-section">
+				<h2>Je foto&apos;s ({photos.length})</h2>
+				{loadingPhotos ? (
+					<div className="loading-photos">Laden...</div>
+				) : photos.length === 0 ? (
+					<div className="no-photos">Nog geen foto&apos;s geüpload</div>
+				) : (
+					<div className="photos-grid">
+						{photos.map((photo) => (
+							<div key={photo.id} className="photo-card">
+								{imageUrls[photo.id] ? (
+									<img
+										src={imageUrls[photo.id]}
+										alt={photo.filename}
+										className="photo-thumbnail"
+									/>
+								) : (
+									<div className="photo-thumbnail-loading">Laden...</div>
+								)}
+								<div className="photo-info">
+									<div className="photo-filename">{photo.filename}</div>
+									<div className="photo-size">{(photo.size / 1024).toFixed(1)} KB</div>
+								</div>
+							</div>
+						))}
+					</div>
+				)}
+
+				<button className="next-btn">Next</button>
 			</div>
 		</div>
 	);
