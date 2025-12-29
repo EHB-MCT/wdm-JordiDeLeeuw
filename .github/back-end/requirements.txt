@@ -2,6 +2,8 @@
 
 #flask is webserver-framework en zorgt ervoor dat je routes kan maken
 flask
+#flask-cors zorgt ervoor dat de browser requests van andere origins toestaat
+flask-cors
 #pytesseract is de ocr-wrapper die tekst uit je afbeeldingen haalt
 pytesseract
 #python image library (PIL) nodig om afbeeldingen te openen in te lezen en door te geven aan pytesseract
