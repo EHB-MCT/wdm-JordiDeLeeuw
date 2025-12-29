@@ -48,6 +48,10 @@ def save_photo(user_id: str, filename: str, mime_type: str, size: int, image_dat
         "size": size,
         "uploadedAt": datetime.utcnow(),
         "imageData": image_data,
+        "status": "uploaded",
+        "extractedText": None,
+        "errorMessage": None,
+        "processedAt": None,
     }
     result = photos.insert_one(photo)
     return result.inserted_id
@@ -62,6 +66,10 @@ def get_user_photos(user_id: str):
             "mimeType": photo["mimeType"],
             "size": photo["size"],
             "uploadedAt": photo["uploadedAt"].isoformat(),
+            "status": photo.get("status", "uploaded"),
+            "extractedText": photo.get("extractedText"),
+            "errorMessage": photo.get("errorMessage"),
+            "processedAt": photo.get("processedAt").isoformat() if photo.get("processedAt") else None,
         }
         for photo in user_photos
     ]
@@ -74,7 +82,45 @@ def get_photo_by_id(photo_id: str, user_id: str):
             return {
                 "mimeType": photo["mimeType"],
                 "imageData": photo["imageData"],
+                "status": photo.get("status", "uploaded"),
+                "extractedText": photo.get("extractedText"),
+                "errorMessage": photo.get("errorMessage"),
             }
         return None
     except:
         return None
+
+def get_photos_for_processing(user_id: str):
+    #haalt fotos op die verwerkt moeten worden
+    return list(photos.find({"userId": ObjectId(user_id), "status": {"$in": ["uploaded", "error"]}}))
+
+def update_photo_status(photo_id: str, status: str, extracted_text: str = None, error_message: str = None):
+    #werkt de status van een foto bij
+    update_data = {"status": status}
+    
+    if status == "done":
+        update_data["extractedText"] = extracted_text
+        update_data["processedAt"] = datetime.utcnow()
+    elif status == "error":
+        update_data["errorMessage"] = error_message
+    
+    photos.update_one({"_id": ObjectId(photo_id)}, {"$set": update_data})
+
+def get_photos_status(user_id: str):
+    #haalt status op van alle fotos van een user
+    user_photos = photos.find({"userId": ObjectId(user_id)}).sort("uploadedAt", 1)
+    return [
+        {
+            "id": str(photo["_id"]),
+            "filename": photo["filename"],
+            "status": photo.get("status", "uploaded"),
+            "extractedText": photo.get("extractedText"),
+            "errorMessage": photo.get("errorMessage"),
+        }
+        for photo in user_photos
+    ]
+
+def delete_user_photos(user_id: str):
+    #verwijdert alle fotos van een user
+    result = photos.delete_many({"userId": ObjectId(user_id)})
+    return result.deleted_count
