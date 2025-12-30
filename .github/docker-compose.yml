@@ -52,6 +52,16 @@ services:
       - app-network
     #pull llama3 model on startup
     entrypoint: ["sh", "-c", "ollama serve & sleep 10 && ollama pull llama3 && wait"]
+    environment:
+      # Limit Ollama parallelism and threads to reduce CPU usage
+      - OLLAMA_NUM_PARALLEL=1      # Limit parallel requests
+      - OLLAMA_MAX_LOADED_MODELS=1  # Keep only 1 model loaded
+      - OLLAMA_NUM_THREAD=2         # Limit CPU threads (default is 4+)
+      - OLLAMA_MAX_BATCH_SIZE=512     # Reduce batch size
+      - CUDA_VISIBLE_DEVICES=        # Disable GPU (if present)
+    #CPU resource limits to prevent overheating
+    cpus: '1.5'  # Limit to 1.5 CPU cores max (Docker Compose format)
+    # memory: 4g    # Optional: add memory limit if needed
 
 #definieer het netwerk waar beide containers in zitten
 networks:

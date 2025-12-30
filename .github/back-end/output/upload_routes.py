@@ -400,7 +400,11 @@ def merge_analysis_results(results_list):
         seen = set()
         unique = []
         for item in items:
-            key = key_func(item) if key_func else item
+            # Handle dictionary items for structured fields
+            if isinstance(item, dict):
+                key = key_func(item) if key_func else str(item)
+            else:
+                key = key_func(item) if key_func else item
             if key not in seen:
                 seen.add(key)
                 unique.append(item)
@@ -540,6 +544,10 @@ def analyze_photos():
         all_photo_data = []
         
         for photo_idx, photo in enumerate(photos_data[:max_photos]):
+            # Add pacing between photos to allow CPU cooling
+            if photo_idx > 0:
+                print(f"Pausing 3 seconds before photo {photo_idx + 1} for CPU cooling...")
+                time.sleep(3)  # Allow CPU to cool between photos
             photo_id = str(photo["_id"])
             photo_info = {
                 "id": photo_id,

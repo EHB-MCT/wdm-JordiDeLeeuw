@@ -24,6 +24,7 @@ export function Dashboard() {
 	const [analyzing, setAnalyzing] = useState(false);
 	const [analysisResults, setAnalysisResults] = useState(null);
 	const [showAnalysis, setShowAnalysis] = useState(false);
+	const [analysisProgress, setAnalysisProgress] = useState({ currentPhoto: 0, totalPhotos: 0, status: 'idle' });
 	const pollIntervalRef = useRef(null);
 	const renderCountRef = useRef(0);
 
@@ -380,10 +381,11 @@ export function Dashboard() {
 		if (analyzing) {
 			console.log("Analysis already in progress, ignoring click");
 			return;
-		}
+		} 
 
 		setAnalyzing(true);
 		setAnalysisResults(null);
+		setAnalysisProgress({ currentPhoto: 0, totalPhotos: photos.length, status: 'analyzing' });
 
 		try {
 			console.log("Starting analysis request...");
@@ -400,11 +402,14 @@ export function Dashboard() {
 			console.log("Raw LLM response:", data);
 			console.log("Analysis summary:", data.summary);
 			console.log("Analysis details:", data.details);
+			console.log("Photos analyzed:", data.analyzedPhotos);
 
 			if (res.ok) {
 				setAnalysisResults(data);
 				setShowAnalysis(true);
+				setAnalysisProgress({ currentPhoto: data.analyzedPhotos, totalPhotos: data.analyzedPhotos, status: 'complete' });
 			} else {
+				setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: 'error' });
 				if (res.status === 429) {
 					alert(`Please wait: ${data.error || "Analysis already in progress"}`);
 				} else {
@@ -412,7 +417,8 @@ export function Dashboard() {
 				}
 			}
 		} catch (error) {
-			console.error("Analysis error:", error);
+			console.error("Failed to fetch analysis:", error);
+			setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: 'error' });
 			alert(`Netwerkfout: ${error.message}`);
 		} finally {
 			setAnalyzing(false);
@@ -536,8 +542,40 @@ export function Dashboard() {
 				</button>
 
 				<button className="analyze-btn" onClick={handleAnalyze} disabled={analyzing || !canAnalyze}>
-					{analyzing ? "Loading model and analyzing..." : "Analyze"}
+					{analyzing ? (
+						<>
+							<span className="loading-spinner">⟳</span>
+							<span>Analyzing... {analysisProgress.status === 'analyzing' ? `(${analysisProgress.currentPhoto}/${analysisProgress.totalPhotos})` : ''}</span>
+						</>
+					) : "Analyze"}
 				</button>
+				
+				{analysisProgress.status !== 'idle' && (
+					<div className="analysis-progress" style={{ marginTop: '1rem', padding: '1rem', background: '#1a1a1a', borderRadius: '8px' }}>
+						<h4>📸 Analysis Progress</h4>
+						<div style={{ marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+							Status: <span style={{ 
+								color: analysisProgress.status === 'complete' ? '#4CAF50' : 
+										analysisProgress.status === 'error' ? '#f44336' : '#ff9800',
+								fontWeight: 'bold'
+							}}>
+								{analysisProgress.status === 'analyzing' ? `Analyzing photo ${analysisProgress.currentPhoto} of ${analysisProgress.totalPhotos}...` :
+								 analysisProgress.status === 'complete' ? 'Analysis complete!' :
+									analysisProgress.status === 'error' ? 'Analysis failed' : 'Processing...'}
+							</span>
+						</div>
+						
+						{analysisProgress.status === 'analyzing' && (
+							<div style={{ 
+								marginTop: '1rem', 
+								height: '4px', 
+								background: '#333', 
+								borderRadius: '2px',
+								width: `${(analysisProgress.currentPhoto / analysisProgress.totalPhotos) * 100}%`
+							}} />
+						)}
+					</div>
+				)}
 
 				<button className="clear-btn" onClick={handleClearAll} disabled={processing || photos.length === 0}>
 					Clear list
