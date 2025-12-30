@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
-from auth_backend import get_user_by_email, create_user, verify_password
+from auth_backend import get_user_by_email, create_user, verify_password, get_user_by_id
+from bson import ObjectId
 
 #maakt een blueprint aan voor auth-routes
 auth_bp = Blueprint("auth", __name__)
@@ -13,6 +14,7 @@ def register():
         email = data.get("email")
         password = data.get("password")
         confirm = data.get("confirmPassword")
+        is_admin = data.get("isAdmin", False)
 
         #check op ontbrekende velden
         if not email or not password or not confirm:
@@ -26,12 +28,13 @@ def register():
         if get_user_by_email(email):
             return jsonify({"error": "email bestaat al"}), 400
 
-        user_id = create_user(email, password)
+        user_id = create_user(email, password, is_admin)
 
         return jsonify({
             "message": "registratie gelukt",
             "userId": str(user_id),
             "email": email,
+            "isAdmin": is_admin,
         }), 201
     except Exception as e:
         print(f"Register error: {e}")
@@ -68,6 +71,7 @@ def login():
             "message": "login gelukt",
             "userId": str(user["_id"]),
             "email": email,
+            "isAdmin": user.get("isAdmin", False),
         }), 200
     except Exception as e:
         print(f"Login error: {e}")
@@ -77,3 +81,38 @@ def login():
             "error": "Login failed",
             "details": str(e)
         }), 500
+
+@auth_bp.route("/api/me", methods=["GET"])
+def get_current_user():
+    """Get current authenticated user info including admin status"""
+    try:
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+        
+        user = get_user_by_id(user_id)
+        if user:
+            print(f"get_current_user: Found user {user_id}, isAdmin: {user.get('isAdmin', False)} (type: {type(user.get('isAdmin', False))})")
+            return jsonify({
+                "userId": str(user["_id"]),
+                "email": user.get("email"),
+                "isAdmin": user.get("isAdmin", False)
+            }), 200
+        else:
+            return jsonify({"error": "User not found"}), 404
+            
+    except Exception as e:
+        print(f"Get current user error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Failed to get user info",
+            "details": str(e)
+        }), 500
+
+def check_auth(request):
+    """Extract user ID from X-User-Id header"""
+    user_id = request.headers.get("X-User-Id")
+    if not user_id:
+        return None
+    return user_id

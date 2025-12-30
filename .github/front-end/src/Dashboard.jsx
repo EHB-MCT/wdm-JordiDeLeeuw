@@ -8,6 +8,13 @@ const API_BASE = "";
 export function Dashboard() {
 	const { user, logout } = useAuth();
 	const navigate = useNavigate();
+
+	// Redirect admins to admin dashboard
+	useEffect(() => {
+		if (user?.isAdmin) {
+			navigate("/admin", { replace: true });
+		}
+	}, [user, navigate]);
 	const [files, setFiles] = useState([]);
 	const [uploading, setUploading] = useState(false);
 	const [response, setResponse] = useState(null);

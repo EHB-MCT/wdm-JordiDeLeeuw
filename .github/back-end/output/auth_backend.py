@@ -2,7 +2,7 @@ from pymongo import MongoClient
 import os
 import bcrypt
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson import ObjectId
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
@@ -38,12 +38,20 @@ def get_user_by_email(email: str):
     #zoekt een user op basis van email
     return users.find_one({"email": email})
 
-def create_user(email: str, password: str):
+def get_user_by_id(user_id: str):
+    #zoekt een user op basis van ID
+    try:
+        return users.find_one({"_id": ObjectId(user_id)})
+    except:
+        return None
+
+def create_user(email: str, password: str, is_admin: bool = False):
     #maakt een nieuwe user aan met gehashed wachtwoord
     hashed_pw = hash_password(password)
     user = {
         "email": email,
         "password": hashed_pw,
+        "isAdmin": is_admin,
     }
     result = users.insert_one(user)
     return result.inserted_id
@@ -535,3 +543,212 @@ def initialize_analysis_status(user_id: str):
     except Exception as e:
         print(f"Error initializing analysis status: {e}")
         return 0
+
+# Admin Analytics Functions
+def check_admin_status(user_id: str) -> bool:
+    """Check if user has admin privileges - use database isAdmin field"""
+    try:
+        user = users.find_one({"_id": ObjectId(user_id)})
+        if user:
+            print(f"check_admin_status: Found user {user_id}, isAdmin field: {user.get('isAdmin', False)} (type: {type(user.get('isAdmin', False))})")
+            return bool(user.get("isAdmin", False))
+        print(f"check_admin_status: User {user_id} not found")
+        return False
+    except Exception as e:
+        print(f"Error checking admin status: {e}")
+        return False
+
+def get_admin_stats() -> dict:
+    """Get comprehensive admin statistics for analytics dashboard"""
+    try:
+        stats = {}
+        
+        # User Metrics
+        stats["totalUsers"] = users.count_documents({})
+        
+        # Count admin users (those with 'admin' in email)
+        stats["adminUsers"] = users.count_documents({"email": {"$regex": "admin", "$options": "i"}})
+        
+        # Users registered in last 7 days
+        seven_days_ago = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=7)
+        stats["newUsersLast7Days"] = users.count_documents({
+            "_id": {"$gte": seven_days_ago}
+        })
+        
+        # Photo Metrics
+        stats["totalPhotos"] = photos.count_documents({})
+        
+        # Photos uploaded in last 7 days
+        stats["photosLast7Days"] = photos.count_documents({
+            "uploadedAt": {"$gte": seven_days_ago}
+        })
+        
+        # Average photos per user
+        if stats["totalUsers"] > 0:
+            stats["avgPhotosPerUser"] = round(stats["totalPhotos"] / stats["totalUsers"], 2)
+        else:
+            stats["avgPhotosPerUser"] = 0
+        
+        # OCR Pipeline Metrics
+        stats["ocrDone"] = photos.count_documents({"ocr.status": "done"})
+        stats["ocrProcessing"] = photos.count_documents({"ocr.status": {"$in": ["uploaded", "received", "extracting"]}})
+        stats["ocrError"] = photos.count_documents({"ocr.status": "error"})
+        
+        # OCR success rate
+        total_ocr_processed = stats["ocrDone"] + stats["ocrError"]
+        if total_ocr_processed > 0:
+            stats["ocrSuccessRate"] = round(stats["ocrDone"] / total_ocr_processed, 3)
+        else:
+            stats["ocrSuccessRate"] = 0
+        
+        # Average text length and line count for completed OCR
+        ocr_pipeline = [
+            {"$match": {"ocr.status": "done", "ocr.extractedText": {"$exists": True, "$ne": ""}}},
+            {"$group": {
+                "_id": None,
+                "avgTextLength": {"$avg": "$ocr.meta.textLength"},
+                "avgLineCount": {"$avg": "$ocr.meta.lineCount"}
+            }}
+        ]
+        
+        ocr_aggregations = list(photos.aggregate(ocr_pipeline))
+        if ocr_aggregations:
+            stats["avgTextLength"] = round(ocr_aggregations[0]["avgTextLength"], 0) if ocr_aggregations[0]["avgTextLength"] else 0
+            stats["avgLineCount"] = round(ocr_aggregations[0]["avgLineCount"], 0) if ocr_aggregations[0]["avgLineCount"] else 0
+        else:
+            stats["avgTextLength"] = 0
+            stats["avgLineCount"] = 0
+        
+        # LLM Pipeline Metrics
+        stats["analysisDone"] = photos.count_documents({"pipelines.userExtract.status": "completed"})
+        stats["analysisFallback"] = photos.count_documents({"pipelines.userExtract.status": "fallback_used"})
+        stats["analysisError"] = photos.count_documents({"pipelines.userExtract.status": {"$in": ["llm_failed", "error"]}})
+        
+        # Analysis fallback rate
+        total_analysis_processed = stats["analysisDone"] + stats["analysisFallback"] + stats["analysisError"]
+        if total_analysis_processed > 0:
+            stats["fallbackRate"] = round(stats["analysisFallback"] / total_analysis_processed, 3)
+        else:
+            stats["fallbackRate"] = 0
+        
+        # Average chunks per photo (extract from analysis results)
+        pipeline = [
+            {"$match": {"pipelines.userExtract.status": "completed", "pipelines.userExtract.resultJson": {"$exists": True}}},
+            {"$project": {"chunkCount": 1}},  # Will be populated during analysis
+            {"$group": {"_id": None, "avgChunks": {"$avg": "$chunkCount"}}}
+        ]
+        
+        # For now, set to null since we don't track chunk count per photo
+        stats["avgChunksPerPhoto"] = None
+        
+        # Average LLM duration (if available in metadata)
+        stats["avgLlmDurationMs"] = None  # Not currently tracked
+        
+        # Privacy & Risk Metrics
+        stats["photosWithExif"] = photos.count_documents({"exif": {"$exists": True, "$ne": None}})
+        stats["photosWithGpsPresent"] = photos.count_documents({"exif.gpsPresent": True})
+        stats["photosWithGpsStored"] = photos.count_documents({
+            "exif.gpsLatitude": {"$exists": True}, 
+            "exif.gpsLongitude": {"$exists": True}
+        })
+        
+        # PII Detection Metrics (will be populated by admin analytics pipeline)
+        stats["photosWithEmailsDetected"] = 0
+        stats["photosWithPhoneNumbersDetected"] = 0
+        stats["photosWithIBANDetected"] = 0
+        stats["photosWithAddressLikeTextDetected"] = 0
+        
+        # Sensitivity Score Distribution (0-5)
+        stats["sensitivityScoreDistribution"] = {
+            "0": 0, "1": 0, "2": 0, "3": 0, "4": 0, "5": 0
+        }
+        
+        return stats
+        
+    except Exception as e:
+        print(f"Error getting admin stats: {e}")
+        import traceback
+        traceback.print_exc()
+        return {}
+
+def get_admin_trends(days: int = 7) -> dict:
+    """Get trend data for the last N days"""
+    try:
+        from datetime import timedelta
+        
+        start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days-1)
+        
+        trends = {}
+        
+        # Users per day trend
+        users_pipeline = [
+            {"$match": {"_id": {"$gte": start_date}}},
+            {"$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$_id"}},
+                "count": {"$sum": 1}
+            }},
+            {"$sort": {"_id": 1}}
+        ]
+        
+        users_per_day = list(users.aggregate(users_pipeline))
+        trends["usersPerDay"] = [{"date": doc["_id"], "count": doc["count"]} for doc in users_per_day]
+        
+        # Photos per day trend
+        photos_pipeline = [
+            {"$match": {"uploadedAt": {"$gte": start_date}}},
+            {"$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$uploadedAt"}},
+                "count": {"$sum": 1}
+            }},
+            {"$sort": {"_id": 1}}
+        ]
+        
+        photos_per_day = list(photos.aggregate(photos_pipeline))
+        trends["photosPerDay"] = [{"date": doc["_id"], "count": doc["count"]} for doc in photos_per_day]
+        
+        # OCR completion per day trend
+        ocr_pipeline = [
+            {"$match": {"ocr.processedAt": {"$gte": start_date}, "ocr.status": "done"}},
+            {"$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$ocr.processedAt"}},
+                "count": {"$sum": 1}
+            }},
+            {"$sort": {"_id": 1}}
+        ]
+        
+        ocr_done_per_day = list(photos.aggregate(ocr_pipeline))
+        trends["ocrDonePerDay"] = [{"date": doc["_id"], "count": doc["count"]} for doc in ocr_done_per_day]
+        
+        # Analysis completion per day trend
+        analysis_pipeline = [
+            {"$match": {"pipelines.userExtract.processedAt": {"$gte": start_date}, "pipelines.userExtract.status": "completed"}},
+            {"$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$pipelines.userExtract.processedAt"}},
+                "count": {"$sum": 1}
+            }},
+            {"$sort": {"_id": 1}}
+        ]
+        
+        analysis_done_per_day = list(photos.aggregate(analysis_pipeline))
+        trends["analysisDonePerDay"] = [{"date": doc["_id"], "count": doc["count"]} for doc in analysis_done_per_day]
+        
+        # Analysis fallback per day trend
+        fallback_pipeline = [
+            {"$match": {"pipelines.userExtract.processedAt": {"$gte": start_date}, "pipelines.userExtract.status": "fallback_used"}},
+            {"$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$pipelines.userExtract.processedAt"}},
+                "count": {"$sum": 1}
+            }},
+            {"$sort": {"_id": 1}}
+        ]
+        
+        fallback_per_day = list(photos.aggregate(fallback_pipeline))
+        trends["fallbackPerDay"] = [{"date": doc["_id"], "count": doc["count"]} for doc in fallback_per_day]
+        
+        return trends
+        
+    except Exception as e:
+        print(f"Error getting admin trends: {e}")
+        import traceback
+        traceback.print_exc()
+        return {}
