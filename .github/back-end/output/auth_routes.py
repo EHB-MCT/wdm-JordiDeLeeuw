@@ -13,6 +13,7 @@ def register():
         email = data.get("email")
         password = data.get("password")
         confirm = data.get("confirmPassword")
+        is_admin = data.get("isAdmin", False)
 
         #check op ontbrekende velden
         if not email or not password or not confirm:
@@ -26,12 +27,13 @@ def register():
         if get_user_by_email(email):
             return jsonify({"error": "email bestaat al"}), 400
 
-        user_id = create_user(email, password)
+        user_id = create_user(email, password, is_admin)
 
         return jsonify({
             "message": "registratie gelukt",
             "userId": str(user_id),
             "email": email,
+            "isAdmin": is_admin,
         }), 201
     except Exception as e:
         print(f"Register error: {e}")
@@ -68,6 +70,7 @@ def login():
             "message": "login gelukt",
             "userId": str(user["_id"]),
             "email": email,
+            "isAdmin": user.get("isAdmin", False),
         }), 200
     except Exception as e:
         print(f"Login error: {e}")

@@ -44,7 +44,7 @@ export function Login() {
 
 			if (res.ok) {
 				setResponse({ success: true, data });
-				login({ email: data.email, userId: data.userId });
+				login({ email: data.email, userId: data.userId, isAdmin: data.isAdmin });
 				setTimeout(() => navigate("/dashboard"), 500);
 			} else {
 				setResponse({ success: false, data });

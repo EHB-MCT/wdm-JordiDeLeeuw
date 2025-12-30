@@ -561,6 +561,15 @@ export function Dashboard() {
 			<div className="dashboard-header">
 				<h1>User Dashboard</h1>
 				<div className="profile-menu">
+					{user?.isAdmin && (
+						<button 
+							className="admin-link-btn" 
+							onClick={() => navigate("/admin")}
+							title="Admin Dashboard"
+						>
+							🛡️ Admin
+						</button>
+					)}
 					<button className="profile-icon" onClick={() => setShowProfileMenu(!showProfileMenu)}>
 						👤
 					</button>

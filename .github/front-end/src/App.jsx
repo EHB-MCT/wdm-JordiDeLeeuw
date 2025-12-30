@@ -1,8 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { ProtectedRoute } from "./ProtectedRoute";
+import { AdminRoute } from "./AdminRoute";
 import { Login } from "./Login";
 import { Dashboard } from "./Dashboard";
+import { AdminDashboard } from "./AdminDashboard";
+import { AccessDenied } from "./AccessDenied";
 import "./App.css";
 
 function AppRoutes() {
@@ -19,6 +22,15 @@ function AppRoutes() {
 					</ProtectedRoute>
 				}
 			/>
+			<Route
+				path="/admin"
+				element={
+					<AdminRoute>
+						<AdminDashboard />
+					</AdminRoute>
+				}
+			/>
+			<Route path="/access-denied" element={<AccessDenied />} />
 		</Routes>
 	);
 }

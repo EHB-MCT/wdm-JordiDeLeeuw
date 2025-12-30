@@ -21,6 +21,25 @@
 	position: relative;
 }
 
+.admin-link-btn {
+	width: 48px;
+	height: 48px;
+	border-radius: 50%;
+	background: #ff6b6b;
+	border: none;
+	font-size: 1.2rem;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: background 0.2s;
+	margin-right: 0.5rem;
+}
+
+.admin-link-btn:hover {
+	background: #ff5252;
+}
+
 .profile-icon {
 	width: 48px;
 	height: 48px;

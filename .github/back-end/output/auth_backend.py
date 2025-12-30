@@ -38,12 +38,13 @@ def get_user_by_email(email: str):
     #zoekt een user op basis van email
     return users.find_one({"email": email})
 
-def create_user(email: str, password: str):
+def create_user(email: str, password: str, is_admin: bool = False):
     #maakt een nieuwe user aan met gehashed wachtwoord
     hashed_pw = hash_password(password)
     user = {
         "email": email,
         "password": hashed_pw,
+        "isAdmin": is_admin,
     }
     result = users.insert_one(user)
     return result.inserted_id
