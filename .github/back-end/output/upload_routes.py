@@ -275,3 +275,131 @@ def migrate_photos():
             "error": "Migration failed",
             "details": str(e)
         }), 500
+
+@upload_bp.route("/api/photos/analyze", methods=["POST"])
+def analyze_photos():
+    #analyze OCR text using Ollama LLM
+    import json
+    try:
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+
+        #get photos with completed OCR
+        photos_data = auth_backend.get_photos_for_analysis(user_id)
+        
+        if len(photos_data) == 0:
+            return jsonify({"error": "No photos with completed OCR found to analyze"}), 400
+
+        #build input text for LLM
+        input_text = "Here are the extracted texts from photos:\n\n"
+        photo_ids = []
+        
+        for i, photo in enumerate(photos_data, 1):
+            photo_ids.append(str(photo["_id"]))
+            filename = photo.get("originalFilename", f"photo_{photo['_id']}")
+            uploaded_at = photo.get("uploadedAt", "").strftime("%Y-%m-%d %H:%M") if photo.get("uploadedAt") else "unknown"
+            extracted_text = photo.get("ocr", {}).get("extractedText", "").strip()
+            
+            input_text += f"Photo {i}: {filename} (uploaded: {uploaded_at})\n"
+            input_text += f"Text: {extracted_text}\n\n"
+
+        #build the proper prompt
+        prompt = f'''You are a personal assistant helping a normal user remember important information from screenshots and photos.
+Based ONLY on the text below, extract what is important to remember.
+Do not invent information.
+Return STRICT JSON in the following format:
+
+{{
+  "highlights": [],
+  "action_items": [],
+  "dates_deadlines": [{{ "date": "", "context": "" }}],
+  "names_entities": [],
+  "numbers_amounts": [{{ "value": "", "context": "" }}],
+  "key_takeaways": [],
+  "short_summary": ""
+}}
+
+If something is not present, return empty arrays or empty strings.
+
+Text to analyze:
+{input_text}'''
+
+        print(f"Analyzing {len(photos_data)} photos for user {user_id}")
+        
+        #query Ollama
+        response = auth_backend.query_ollama(prompt, "llama3")
+        
+        try:
+            #parse JSON response
+            result_json = json.loads(response)
+            short_summary = result_json.get("short_summary", "")
+        except json.JSONDecodeError:
+            #if JSON parsing fails, create a structured response with raw text
+            print(f"Failed to parse JSON from Ollama, using fallback")
+            result_json = {
+                "highlights": [],
+                "action_items": [],
+                "dates_deadlines": [],
+                "names_entities": [],
+                "numbers_amounts": [],
+                "key_takeaways": [],
+                "short_summary": response[:200] + "..." if len(response) > 200 else response
+            }
+            short_summary = result_json["short_summary"]
+
+        #save summary to database
+        summary_id = auth_backend.save_user_summary(
+            user_id=user_id,
+            photo_ids=photo_ids,
+            model_used="llama3",
+            result_json=result_json,
+            short_summary=short_summary
+        )
+
+        print(f"Analysis complete for user {user_id}, summary ID: {summary_id}")
+
+        return jsonify({
+            "summary": short_summary,
+            "details": result_json,
+            "analyzedPhotos": len(photos_data),
+            "summaryId": str(summary_id)
+        }), 200
+
+    except Exception as e:
+        print(f"Analysis error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Analysis failed",
+            "details": str(e)
+        }), 500
+
+@upload_bp.route("/api/photos/summary", methods=["GET"])
+def get_summary():
+    #get latest analysis for user
+    try:
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+
+        summary = auth_backend.get_latest_user_summary(user_id)
+        
+        if not summary:
+            return jsonify({"error": "No analysis found"}), 404
+
+        return jsonify({
+            "summary": summary.get("shortSummary", ""),
+            "details": summary.get("resultJson", {}),
+            "createdAt": summary.get("createdAt"),
+            "analyzedPhotos": len(summary.get("sourcePhotoIds", []))
+        }), 200
+
+    except Exception as e:
+        print(f"Get summary error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Failed to retrieve analysis",
+            "details": str(e)
+        }), 500

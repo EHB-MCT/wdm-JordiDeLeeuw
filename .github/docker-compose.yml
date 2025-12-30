@@ -25,6 +25,9 @@ services:
     #verbind de backend met hetzelfde netwerk als de frontend
     networks:
       - app-network
+    depends_on:
+      - mongo
+      - ollama
 
   mongo:
     #mongodb database service voor users (login/register)
@@ -37,6 +40,19 @@ services:
     networks:
       - app-network
 
+  ollama:
+    #ollama service for LLM analysis
+    image: ollama/ollama:latest
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - app-network
+    #pull llama3 model on startup
+    entrypoint: ["sh", "-c", "ollama serve & ollama pull llama3 && wait"]
+
 #definieer het netwerk waar beide containers in zitten
 networks:
   app-network:
@@ -46,3 +62,5 @@ networks:
 volumes:
   mongo-data:
     #volume om de mongodb data te bewaren
+  ollama-data:
+    #volume om de ollama models te bewaren

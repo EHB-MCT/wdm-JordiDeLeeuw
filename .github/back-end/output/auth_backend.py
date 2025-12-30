@@ -7,6 +7,8 @@ from bson import ObjectId
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 import io
+import requests
+import json
 
 #maakt connectie met mongodb via environment variabele
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://mongo:27017/dev5")
@@ -15,10 +17,12 @@ client = MongoClient(MONGO_URI)
 db = client["dev5"]
 users = db["users"]
 photos = db["photos"]
+summaries = db["summaries"]
 
 #maakt index aan voor snelle queries per user
 photos.create_index([("userId", 1), ("uploadedAt", -1)])
 photos.create_index([("userId", 1), ("metadata.sha256Hash", 1)])
+summaries.create_index([("userId", 1), ("createdAt", -1)])
 
 def hash_password(password: str) -> str:
     #hash het wachtwoord met bcrypt
@@ -203,11 +207,10 @@ def get_user_photos(user_id: str):
                 "uploadedAt": photo.get("uploadedAt", datetime.utcnow()).isoformat(),
                 "metadata": photo.get("metadata", {}),
                 "exif": photo.get("exif"),
-                "ocr": {
-                    "status": photo.get("ocr", {}).get("status", "uploaded"),
-                    "extractedText": photo.get("ocr", {}).get("extractedText"),
-                    "meta": photo.get("ocr", {}).get("meta"),
-                },
+                "status": photo.get("ocr", {}).get("status", "uploaded"),
+                "extractedText": photo.get("ocr", {}).get("extractedText"),
+                "errorMessage": photo.get("ocr", {}).get("errorMessage"),
+                "size": photo.get("metadata", {}).get("fileSizeBytes", 0),
             })
         except Exception as e:
             print(f"Error processing photo {photo.get('_id')}: {e}")
@@ -304,3 +307,78 @@ def migrate_missing_original_filenames():
         import traceback
         traceback.print_exc()
         raise
+
+def query_ollama(prompt: str, model: str = "llama3"):
+    #query ollama for LLM analysis
+    try:
+        ollama_url = "http://ollama:11434/api/generate"
+        
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False
+        }
+        
+        response = requests.post(
+            ollama_url,
+            json=payload,
+            timeout=60  # 60 second timeout
+        )
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        return result.get("response", "")
+    except requests.exceptions.Timeout:
+        raise Exception("Ollama request timed out")
+    except requests.exceptions.ConnectionError:
+        raise Exception("Could not connect to Ollama service")
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Ollama request failed: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Ollama query error: {str(e)}")
+
+def get_photos_for_analysis(user_id: str):
+    #get all photos for user that have completed OCR
+    return list(photos.find({
+        "userId": ObjectId(user_id),
+        "ocr.status": "done"
+    }).sort("uploadedAt", 1))
+
+def save_user_summary(user_id: str, photo_ids: list, model_used: str, result_json: dict, short_summary: str):
+    #save analysis result to database
+    try:
+        summary = {
+            "userId": ObjectId(user_id),
+            "createdAt": datetime.utcnow(),
+            "sourcePhotoIds": [ObjectId(pid) for pid in photo_ids],
+            "modelUsed": model_used,
+            "resultJson": result_json,
+            "shortSummary": short_summary
+        }
+        
+        result = summaries.insert_one(summary)
+        return result.inserted_id
+    except Exception as e:
+        print(f"Error saving user summary: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+def get_latest_user_summary(user_id: str):
+    #get the most recent analysis for a user
+    try:
+        summary = summaries.find_one(
+            {"userId": ObjectId(user_id)},
+            sort=[("createdAt", -1)]
+        )
+        
+        if summary:
+            summary["_id"] = str(summary["_id"])
+            summary["userId"] = str(summary["userId"])
+            summary["sourcePhotoIds"] = [str(pid) for pid in summary["sourcePhotoIds"]]
+            return summary
+        return None
+    except Exception as e:
+        print(f"Error getting user summary: {e}")
+        return None

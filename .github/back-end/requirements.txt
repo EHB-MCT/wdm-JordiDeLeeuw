@@ -12,3 +12,5 @@ Pillow
 pymongo
 #bcrypt voor veilige wachtwoord hashing
 bcrypt
+#requests voor HTTP calls naar Ollama
+requests

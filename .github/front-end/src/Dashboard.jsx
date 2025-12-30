@@ -21,6 +21,9 @@ export function Dashboard() {
 	const [processingStatus, setProcessingStatus] = useState([]);
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [locationOptIn, setLocationOptIn] = useState(false);
+	const [analyzing, setAnalyzing] = useState(false);
+	const [analysisResults, setAnalysisResults] = useState(null);
+	const [showAnalysis, setShowAnalysis] = useState(false);
 	const pollIntervalRef = useRef(null);
 	const renderCountRef = useRef(0);
 
@@ -29,6 +32,7 @@ export function Dashboard() {
 
 	useEffect(() => {
 		fetchPhotos();
+		fetchAnalysis();
 		return () => {
 			Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
 		};
@@ -339,6 +343,56 @@ export function Dashboard() {
 		return Math.round((completed / processingStatus.length) * 100);
 	};
 
+	const fetchAnalysis = async () => {
+		try {
+			const res = await fetch(`${API_BASE}/api/photos/summary`, {
+				headers: {
+					"X-User-Id": user.userId,
+				},
+			});
+
+			if (res.ok) {
+				const data = await res.json();
+				setAnalysisResults(data);
+				setShowAnalysis(true);
+			} else if (res.status !== 404) {
+				console.error("Failed to fetch analysis");
+			}
+		} catch (error) {
+			console.error("Failed to fetch analysis:", error);
+		}
+	};
+
+	const handleAnalyze = async () => {
+		setAnalyzing(true);
+		setAnalysisResults(null);
+
+		try {
+			const res = await fetch(`${API_BASE}/api/photos/analyze`, {
+				method: "POST",
+				headers: {
+					"X-User-Id": user.userId,
+				},
+			});
+
+			const data = await res.json();
+
+			if (res.ok) {
+				setAnalysisResults(data);
+				setShowAnalysis(true);
+			} else {
+				alert(`Analyse mislukt: ${data.error || "Onbekende fout"}`);
+			}
+		} catch (error) {
+			alert(`Netwerkfout: ${error.message}`);
+		} finally {
+			setAnalyzing(false);
+		}
+	};
+
+	const canAnalyze = photos.length > 0 && 
+		photos.every(photo => photo.status === "done");
+
 	return (
 		<div className="dashboard">
 			{showProcessingModal && (
@@ -354,7 +408,7 @@ export function Dashboard() {
 						<div className="processing-status-list">
 							{processingStatus.map((photo, index) => (
 								<div key={photo.id} className="processing-status-item">
-									<span className="status-filename">Foto {index + 1}: {photo.filename}</span>
+									<span className="status-filename">Foto {index + 1}: {photo.originalFilename}</span>
 									<span className={getStatusBadgeClass(photo.status)}>
 										{getStatusLabel(photo.status)}
 									</span>
@@ -452,11 +506,11 @@ export function Dashboard() {
 									<div className="photo-thumbnail-loading">Laden...</div>
 								)}
 								<div className="photo-info">
-									<div className="photo-filename">{photo.filename}</div>
+									<div className="photo-filename">{photo.originalFilename}</div>
 									<div className="photo-size">{(photo.size / 1024).toFixed(1)} KB</div>
-									<div className={getStatusBadgeClass(photo.status)}>
-										{getStatusLabel(photo.status)}
-									</div>
+								<div className={getStatusBadgeClass(photo.status)}>
+									{getStatusLabel(photo.status)}
+								</div>
 									{photo.extractedText && (
 										<div className="photo-extracted-text">
 											<strong>Gevonden tekst:</strong> {photo.extractedText}
@@ -475,6 +529,14 @@ export function Dashboard() {
 
 				<button className="next-btn" onClick={handleProcessAll} disabled={processing || photos.length === 0}>
 					{processing ? "Verwerken..." : "Next"}
+				</button>
+
+				<button 
+					className="analyze-btn" 
+					onClick={handleAnalyze} 
+					disabled={analyzing || !canAnalyze}
+				>
+					{analyzing ? "Analyzing important information..." : "Analyze"}
 				</button>
 
 				<button 
@@ -515,6 +577,89 @@ export function Dashboard() {
 									))}
 								</div>
 							</>
+						)}
+					</div>
+				)}
+
+				{showAnalysis && analysisResults && (
+					<div className="analysis-section">
+						<h3>Important things to remember</h3>
+						<div className="analysis-summary">
+							<p className="summary-text">{analysisResults.summary}</p>
+						</div>
+						
+						{analysisResults.details && (
+							<div className="analysis-details">
+								{analysisResults.details.highlights && analysisResults.details.highlights.length > 0 && (
+									<div className="detail-section">
+										<h4>🌟 Highlights</h4>
+										<ul>
+											{analysisResults.details.highlights.map((highlight, index) => (
+												<li key={index}>{highlight}</li>
+											))}
+										</ul>
+									</div>
+								)}
+
+								{analysisResults.details.action_items && analysisResults.details.action_items.length > 0 && (
+									<div className="detail-section">
+										<h4>✅ Action Items</h4>
+										<ul>
+											{analysisResults.details.action_items.map((item, index) => (
+												<li key={index}>{item}</li>
+											))}
+										</ul>
+									</div>
+								)}
+
+								{analysisResults.details.dates_deadlines && analysisResults.details.dates_deadlines.length > 0 && (
+									<div className="detail-section">
+										<h4>📅 Dates & Deadlines</h4>
+										<ul>
+											{analysisResults.details.dates_deadlines.map((item, index) => (
+												<li key={index}>
+													<strong>{item.date}</strong> - {item.context}
+												</li>
+											))}
+										</ul>
+									</div>
+								)}
+
+								{analysisResults.details.names_entities && analysisResults.details.names_entities.length > 0 && (
+									<div className="detail-section">
+										<h4>👥 Names & Entities</h4>
+										<ul>
+											{analysisResults.details.names_entities.map((name, index) => (
+												<li key={index}>{name}</li>
+											))}
+										</ul>
+									</div>
+								)}
+
+								{analysisResults.details.numbers_amounts && analysisResults.details.numbers_amounts.length > 0 && (
+									<div className="detail-section">
+										<h4>🔢 Numbers & Amounts</h4>
+										<ul>
+											{analysisResults.details.numbers_amounts.map((item, index) => (
+												<li key={index}>
+													<strong>{item.value}</strong> - {item.context}
+												</li>
+											))}
+										</ul>
+									</div>
+								)}
+
+								{analysisResults.details.key_takeaways && analysisResults.details.key_takeaways.length > 0 && (
+									<div className="detail-section">
+										<h4>💡 Key Takeaways</h4>
+										<ul>
+											{analysisResults.details.key_takeaways.map((takeaway, index) => (
+												<li key={index}>{takeaway}</li>
+											))}
+										</ul>
+									</div>
+								)}
+							</div>
 						)}
 					</div>
 				)}
