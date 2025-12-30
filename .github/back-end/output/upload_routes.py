@@ -276,94 +276,433 @@ def migrate_photos():
             "details": str(e)
         }), 500
 
-@upload_bp.route("/api/photos/analyze", methods=["POST"])
-def analyze_photos():
-    #analyze OCR text using Ollama LLM
-    import json
-    try:
-        user_id = check_auth(request)
-        if not user_id:
-            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+def validate_json_structure(data):
+    """Validate JSON response structure and types"""
+    required_keys = [
+        "highlights", "action_items", "dates_deadlines", 
+        "names_entities", "numbers_amounts", "key_takeaways", "short_summary"
+    ]
+    
+    if not isinstance(data, dict) or not all(key in data for key in required_keys):
+        return False, "Missing required keys or not a dict"
+    
+    if not all(isinstance(data.get(key), list) for key in [
+        "highlights", "action_items", "dates_deadlines", 
+        "names_entities", "numbers_amounts", "key_takeaways"
+    ]):
+        return False, "Array fields must be lists"
+    
+    if not isinstance(data.get("short_summary"), str):
+        return False, "short_summary must be a string"
+    
+    #validate dates_deadlines structure
+    for item in data.get("dates_deadlines", []):
+        if not isinstance(item, dict) or "date" not in item or "context" not in item:
+            return False, "dates_deadlines items must have date and context"
+    
+    #validate numbers_amounts structure
+    for item in data.get("numbers_amounts", []):
+        if not isinstance(item, dict) or "value" not in item or "context" not in item:
+            return False, "numbers_amounts items must have value and context"
+    
+    #ensure short_summary is plain text, not JSON
+    short_summary = data.get("short_summary", "")
+    if '{' in short_summary or '}' in short_summary:
+        #clean JSON artifacts from short_summary
+        cleaned = short_summary.replace('{', '').replace('}', '').strip()
+        if cleaned.startswith('"') and cleaned.endswith('"'):
+            cleaned = cleaned[1:-1]
+        data["short_summary"] = cleaned
+        print("Cleaned JSON artifacts from short_summary")
+    
+    return True, "Valid"
 
-        #get photos with completed OCR
-        photos_data = auth_backend.get_photos_for_analysis(user_id)
+def chunk_text(text, chunk_size=1000, overlap=150):
+    """Split text into chunks with overlap"""
+    if len(text) <= chunk_size:
+        return [text]
+    
+    chunks = []
+    start = 0
+    
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        chunk = text[start:end]
         
-        if len(photos_data) == 0:
-            return jsonify({"error": "No photos with completed OCR found to analyze"}), 400
-
-        #build input text for LLM
-        input_text = "Here are the extracted texts from photos:\n\n"
-        photo_ids = []
+        # If not the last chunk, try to break at word boundary
+        if end < len(text):
+            # Find last space before the end
+            last_space = chunk.rfind(' ')
+            if last_space > chunk_size - overlap - 50:  # Ensure we don't cut too much
+                chunk = chunk[:last_space]
+                end = start + last_space
         
-        for i, photo in enumerate(photos_data, 1):
-            photo_ids.append(str(photo["_id"]))
-            filename = photo.get("originalFilename", f"photo_{photo['_id']}")
-            uploaded_at = photo.get("uploadedAt", "").strftime("%Y-%m-%d %H:%M") if photo.get("uploadedAt") else "unknown"
-            extracted_text = photo.get("ocr", {}).get("extractedText", "").strip()
+        chunks.append(chunk)
+        
+        # Calculate next start with overlap - we should have moved past end-overlap
+        if end >= len(text):  # Last chunk
+            break
             
-            input_text += f"Photo {i}: {filename} (uploaded: {uploaded_at})\n"
-            input_text += f"Text: {extracted_text}\n\n"
+        # Move start forward, ensuring we make progress
+        start = end - overlap
+        
+        # Ensure we make forward progress
+        if start <= end - chunk_size:
+            start = end
+            
+        # Safety limit
+        if len(chunks) >= 10:  # realistic cap per photo
+            print(f"Warning: Chunking stopped at 10 chunks to prevent overload")
+            break
+    
+    return chunks
 
-        #build the proper prompt
-        prompt = f'''You are a personal assistant helping a normal user remember important information from screenshots and photos.
-Based ONLY on the text below, extract what is important to remember.
-Do not invent information.
-Return STRICT JSON in the following format:
+def create_chunk_prompt(photo_info, chunk_text, chunk_index, total_chunks):
+    """Create prompt for analyzing a single text chunk"""
+    return f'''You are analyzing a chunk (chunk {chunk_index + 1} of {total_chunks}) from a photo.
 
+Photo: {photo_info['filename']} (uploaded: {photo_info['uploaded_at']})
+
+INSTRUCTIONS:
+- Return ONLY valid JSON. No preamble. No explanation. No markdown.
+- Do NOT include JSON inside short_summary.
+- short_summary must be plain text (1-2 sentences for this chunk).
+- If info exists in chunk text, fill correct arrays; do not leave everything empty.
+- Output must start with "{{" and end with "}}".
+
+Return this JSON structure:
 {{
   "highlights": [],
   "action_items": [],
-  "dates_deadlines": [{{ "date": "", "context": "" }}],
+  "dates_deadlines": [{{"date": "", "context": ""}}],
   "names_entities": [],
-  "numbers_amounts": [{{ "value": "", "context": "" }}],
+  "numbers_amounts": [{{"value": "", "context": ""}}],
   "key_takeaways": [],
   "short_summary": ""
 }}
 
-If something is not present, return empty arrays or empty strings.
+Chunk text to analyze:
+{chunk_text}'''
 
-Text to analyze:
-{input_text}'''
+def merge_analysis_results(results_list):
+    """Merge multiple analysis results with deduplication"""
+    merged = {
+        "highlights": [],
+        "action_items": [],
+        "dates_deadlines": [],
+        "names_entities": [],
+        "numbers_amounts": [],
+        "key_takeaways": []
+    }
+    
+    # Helper to dedupe by key function
+    def dedupe_list(items, key_func=None):
+        seen = set()
+        unique = []
+        for item in items:
+            key = key_func(item) if key_func else item
+            if key not in seen:
+                seen.add(key)
+                unique.append(item)
+        return unique
+    
+    for result in results_list:
+        if not isinstance(result, dict):
+            continue
+            
+        # Merge and dedupe each field
+        merged["highlights"].extend(result.get("highlights", []))
+        merged["action_items"].extend(result.get("action_items", []))
+        merged["dates_deadlines"].extend(result.get("dates_deadlines", []))
+        merged["names_entities"].extend(result.get("names_entities", []))
+        merged["numbers_amounts"].extend(result.get("numbers_amounts", []))
+        merged["key_takeaways"].extend(result.get("key_takeaways", []))
+    
+    # Dedupe each field
+    merged["highlights"] = dedupe_list(merged["highlights"])
+    merged["action_items"] = dedupe_list(merged["action_items"])
+    merged["names_entities"] = dedupe_list(merged["names_entities"])
+    merged["key_takeaways"] = dedupe_list(merged["key_takeaways"])
+    
+    # Dedupe structured fields
+    merged["dates_deadlines"] = dedupe_list(
+        merged["dates_deadlines"], 
+        lambda x: f"{x.get('date', '')}|{x.get('context', '')}"
+    )
+    merged["numbers_amounts"] = dedupe_list(
+        merged["numbers_amounts"],
+        lambda x: f"{x.get('value', '')}|{x.get('context', '')}"
+    )
+    
+    return merged
 
-        print(f"Analyzing {len(photos_data)} photos for user {user_id}")
+def create_photo_summary_prompt(photo_info, merged_analysis):
+    """Create final summary prompt for a photo using merged chunk results"""
+    highlights_text = "\n".join([f"- {h}" for h in merged_analysis.get("highlights", [])[:5]])
+    actions_text = "\n".join([f"- {a}" for a in merged_analysis.get("action_items", [])[:5]])
+    names_text = "\n".join([f"- {n}" for n in merged_analysis.get("names_entities", [])[:5]])
+    
+    prompt = f'''Create a concise summary (1-3 sentences) for photo "{photo_info['filename']}'" based on these extracted insights:
+
+Highlights:
+{highlights_text}
+
+Action Items:
+{actions_text}
+
+Names/Entities:
+{names_text}
+
+Return ONLY a JSON object with this structure:
+{{"short_summary": "Concise summary here"}}
+
+The summary should be natural human text, NOT JSON-like content.'''
+
+    return prompt
+
+def parse_llm_response(response):
+    """Parse and validate LLM response with retry logic"""
+    import json
+    if not response or not response.strip():
+        return None
         
-        #query Ollama
-        response = auth_backend.query_ollama(prompt, "llama3")
-        
+    max_attempts = 2
+    for attempt in range(max_attempts):
         try:
-            #parse JSON response
-            result_json = json.loads(response)
-            short_summary = result_json.get("short_summary", "")
-        except json.JSONDecodeError:
-            #if JSON parsing fails, create a structured response with raw text
-            print(f"Failed to parse JSON from Ollama, using fallback")
-            result_json = {
+            clean_response = response.strip()
+            
+            #try parsing entire response first
+            try:
+                result_json = json.loads(clean_response)
+            except json.JSONDecodeError:
+                #extract JSON between first { and last }
+                first_brace = clean_response.find('{')
+                last_brace = clean_response.rfind('}')
+                
+                if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+                    json_str = clean_response[first_brace:last_brace + 1]
+                    result_json = json.loads(json_str)
+                else:
+                    raise Exception("No JSON found in response")
+            
+            #validate structure
+            is_valid, validation_msg = validate_json_structure(result_json)
+            if is_valid:
+                return result_json
+            else:
+                print(f"Invalid JSON structure: {validation_msg}")
+                if attempt == max_attempts - 1:
+                    return None
+                    
+        except Exception as e:
+            print(f"Parse attempt {attempt + 1} failed: {e}")
+            if attempt == max_attempts - 1:
+                return None
+    
+    return None
+
+@upload_bp.route("/api/photos/analyze", methods=["POST"])
+def analyze_photos():
+    #analyze OCR text using Ollama LLM
+    import json
+    import time
+    
+    #simple in-memory lock to prevent concurrent analyze requests
+    if not hasattr(analyze_photos, '_locks'):
+        analyze_photos._locks = {}
+    
+    try:
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+        
+        current_time = time.time()
+        if user_id in analyze_photos._locks:
+            last_request_time = analyze_photos._locks[user_id]
+            if current_time - last_request_time < 30:  # 30 second cooldown
+                return jsonify({"error": "Analysis already in progress. Please wait 30 seconds between requests."}), 429
+        
+        analyze_photos._locks[user_id] = current_time
+
+        #get photos with completed OCR - LIMIT to prevent resource overload
+        photos_data = auth_backend.get_photos_for_analysis_limited(user_id, max_photos=20, max_chars=8000)
+        
+        if len(photos_data) == 0:
+            return jsonify({"error": "No photos with completed OCR found to analyze"}), 400
+
+#chunking-based analysis per photo with total limits
+        max_photos = 20
+        max_chunks_per_photo = 10
+        
+        print(f"Starting chunked analysis of {len(photos_data)} photos for user {user_id}")
+        
+        per_photo_results = {}
+        all_photo_data = []
+        
+        for photo_idx, photo in enumerate(photos_data[:max_photos]):
+            photo_id = str(photo["_id"])
+            photo_info = {
+                "id": photo_id,
+                "filename": photo.get("originalFilename", f"photo_{photo_id}"),
+                "uploaded_at": photo.get("uploadedAt", "").strftime("%Y-%m-%d %H:%M") if photo.get("uploadedAt") else "unknown",
+                "extracted_text": photo.get("ocr", {}).get("extractedText", "").strip()
+            }
+            
+            if not photo_info["extracted_text"]:
+                print(f"Skipping photo {photo_idx + 1} - no extracted text")
+                continue
+            
+            #chunk the text
+            chunks = chunk_text(photo_info["extracted_text"], chunk_size=1000, overlap=150)
+            
+            #limit chunks per photo
+            if len(chunks) > max_chunks_per_photo:
+                chunks = chunks[:max_chunks_per_photo]
+                print(f"Limited photo {photo_idx + 1} to {max_chunks_per_photo} chunks")
+            
+            print(f"Processing photo {photo_idx + 1}: {photo_info['filename']}, {len(chunks)} chunks, {len(photo_info['extracted_text'])} chars")
+            
+            chunk_results = []
+            
+            #analyze each chunk
+            for chunk_idx, chunk in enumerate(chunks):
+                print(f"  Analyzing chunk {chunk_idx + 1}/{len(chunks)} ({len(chunk)} chars)")
+                
+                chunk_prompt = create_chunk_prompt(photo_info, chunk, chunk_idx, len(chunks))
+                
+                try:
+                    chunk_response = auth_backend.query_ollama(chunk_prompt, "llama3")
+                    chunk_result = parse_llm_response(chunk_response)
+                    
+                    if chunk_result:
+                        chunk_results.append(chunk_result)
+                        print(f"    ✓ Chunk {chunk_idx + 1} analyzed successfully")
+                    else:
+                        print(f"    ✗ Chunk {chunk_idx + 1} failed to parse")
+                        
+                except Exception as e:
+                    print(f"    ✗ Chunk {chunk_idx + 1} error: {e}")
+            
+            #merge chunk results for this photo
+            if chunk_results:
+                merged_photo_analysis = merge_analysis_results(chunk_results)
+                
+                #create final photo summary
+                summary_prompt = create_photo_summary_prompt(photo_info, merged_photo_analysis)
+                try:
+                    summary_response = auth_backend.query_ollama(summary_prompt, "llama3")
+                    summary_result = parse_llm_response(summary_response)
+                    
+                    if summary_result and "short_summary" in summary_result:
+                        merged_photo_analysis["short_summary"] = summary_result["short_summary"]
+                        print(f"    ✓ Photo summary created: {summary_result['short_summary'][:100]}...")
+                    else:
+                        #fallback: use best existing summary or create generic one
+                        existing_summaries = [cr.get("short_summary", "") for cr in chunk_results if cr.get("short_summary")]
+                        merged_photo_analysis["short_summary"] = existing_summaries[0] if existing_summaries else f"Analysis of {photo_info['filename']} with {len(chunk_results)} processed chunks"
+                        
+                except Exception as e:
+                    print(f"    ✗ Photo summary error: {e}")
+                    merged_photo_analysis["short_summary"] = f"Analysis of {photo_info['filename']}"
+                
+                #store photo result
+                per_photo_results[photo_id] = {
+                    "photo_info": photo_info,
+                    "analysis": merged_photo_analysis,
+                    "chunk_count": len(chunk_results)
+                }
+                all_photo_data.append(merged_photo_analysis)
+                
+                #save per-photo pipeline result
+                try:
+                    auth_backend.update_photo_pipeline_result(photo_id, "userExtract", merged_photo_analysis)
+                except Exception as e:
+                    print(f"    ⚠ Failed to save pipeline result: {e}")
+            
+            print(f"  Photo {photo_idx + 1} complete: {len(chunk_results)} chunks analyzed")
+        
+        #create final combined summary across all photos
+        if all_photo_data:
+            print(f"Creating final combined summary from {len(all_photo_data)} photos...")
+            final_merged = merge_analysis_results(all_photo_data)
+            
+            #create final combined summary prompt
+            final_prompt = f'''Create a concise summary (1-3 sentences) of all analyzed photos based on these combined insights:
+
+Total photos analyzed: {len(all_photo_data)}
+
+Key highlights found:
+{chr(10).join([f"- {h}" for h in final_merged.get("highlights", [])[:5]])}
+
+Main action items:
+{chr(10).join([f"- {a}" for a in final_merged.get("action_items", [])[:5]])}
+
+Important dates/entities:
+{chr(10).join([f"- {n}" for n in final_merged.get("names_entities", [])[:3]])}
+
+Return ONLY this JSON structure:
+{{"short_summary": "Concise summary of all photos"}}
+
+The summary should be natural human text covering the main insights from all photos.'''
+            
+            try:
+                final_response = auth_backend.query_ollama(final_prompt, "llama3")
+                final_summary_result = parse_llm_response(final_response)
+                
+                if final_summary_result and "short_summary" in final_summary_result:
+                    final_merged["short_summary"] = final_summary_result["short_summary"]
+                    print(f"✓ Final summary created: {final_summary_result['short_summary'][:150]}...")
+                else:
+                    final_merged["short_summary"] = f"Analysis of {len(all_photo_data)} photos with extracted text and insights"
+                    
+            except Exception as e:
+                print(f"✗ Final summary error: {e}")
+                final_merged["short_summary"] = f"Analysis of {len(all_photo_data)} photos"
+            
+            final_result_json = final_merged
+        else:
+            final_result_json = {
                 "highlights": [],
                 "action_items": [],
                 "dates_deadlines": [],
                 "names_entities": [],
                 "numbers_amounts": [],
                 "key_takeaways": [],
-                "short_summary": response[:200] + "..." if len(response) > 200 else response
+                "short_summary": "No photos with extracted text found to analyze"
             }
-            short_summary = result_json["short_summary"]
 
-        #save summary to database
-        summary_id = auth_backend.save_user_summary(
-            user_id=user_id,
-            photo_ids=photo_ids,
-            model_used="llama3",
-            result_json=result_json,
-            short_summary=short_summary
-        )
-
-        print(f"Analysis complete for user {user_id}, summary ID: {summary_id}")
+        print(f"Chunked analysis complete for user {user_id}")
+        
+        #save combined user summary
+        try:
+            summary_id = auth_backend.save_user_summary(
+                user_id=user_id,
+                photo_ids=list(per_photo_results.keys()),
+                model_used="llama3_chunked",
+                result_json=final_result_json,
+                short_summary=final_result_json.get("short_summary", "")
+            )
+            print(f"Saved user summary ID: {summary_id}")
+        except Exception as e:
+            print(f"Failed to save user summary: {e}")
+            return jsonify({
+                "error": "Failed to save analysis results",
+                "details": str(e)
+            }), 500
 
         return jsonify({
-            "summary": short_summary,
-            "details": result_json,
-            "analyzedPhotos": len(photos_data),
-            "summaryId": str(summary_id)
+            "summary": final_result_json.get("short_summary", ""),
+            "details": final_result_json,
+            "analyzedPhotos": len(per_photo_results),
+            "summaryId": str(summary_id),
+            "perPhotoResults": {
+                str(pid): {
+                    "filename": result["photo_info"]["filename"],
+                    "chunkCount": result["chunk_count"],
+                    "analysis": result["analysis"]
+                }
+                for pid, result in per_photo_results.items()
+            }
         }), 200
 
     except Exception as e:
@@ -374,6 +713,10 @@ Text to analyze:
             "error": "Analysis failed",
             "details": str(e)
         }), 500
+    finally:
+        #clean up the lock
+        if hasattr(analyze_photos, '_locks') and user_id in analyze_photos._locks:
+            del analyze_photos._locks[user_id]
 
 @upload_bp.route("/api/photos/summary", methods=["GET"])
 def get_summary():

@@ -309,30 +309,53 @@ def migrate_missing_original_filenames():
         raise
 
 def query_ollama(prompt: str, model: str = "llama3"):
-    #query ollama for LLM analysis
+    #query ollama for LLM analysis with resource safeguards
     try:
+        #log prompt size for monitoring
+        prompt_length = len(prompt)
+        print(f"LLM REQUEST: Prompt length: {prompt_length} characters, Model: {model}")
+        
+        if prompt_length > 20000:
+            raise Exception(f"Prompt too long: {prompt_length} characters (max 20000)")
+        
+        if prompt_length > 15000:
+            print(f"WARNING: Large prompt ({prompt_length} chars) - may cause high resource usage")
+        
         ollama_url = "http://ollama:11434/api/generate"
         
         payload = {
             "model": model,
             "prompt": prompt,
-            "stream": False
+            "stream": False,
+            "options": {
+                "temperature": 0.1,  # lower temp for more predictable responses
+                "num_predict": 2000,  # limit output length
+                "top_k": 40,
+                "top_p": 0.9
+            }
         }
         
+        print(f"Sending LLM request to {ollama_url}")
+        
+        #shorter timeout with connection timeout
         response = requests.post(
             ollama_url,
             json=payload,
-            timeout=60  # 60 second timeout
+            timeout=(30, 60)  # (connect_timeout, read_timeout) 
         )
         
         response.raise_for_status()
         result = response.json()
         
-        return result.get("response", "")
+        llm_response = result.get("response", "")
+        response_length = len(llm_response)
+        print(f"LLM RESPONSE: Length: {response_length} characters")
+        
+        return llm_response
     except requests.exceptions.Timeout:
-        raise Exception("Ollama request timed out")
+        raise Exception("Ollama request timed out - try with fewer photos or shorter text")
     except requests.exceptions.ConnectionError:
-        raise Exception("Could not connect to Ollama service")
+        raise Exception("Could not connect to Ollama service - ensure it's running")
     except requests.exceptions.RequestException as e:
         raise Exception(f"Ollama request failed: {str(e)}")
     except Exception as e:
@@ -344,6 +367,38 @@ def get_photos_for_analysis(user_id: str):
         "userId": ObjectId(user_id),
         "ocr.status": "done"
     }).sort("uploadedAt", 1))
+
+def get_photos_for_analysis_limited(user_id: str, max_photos: int = 20, max_chars: int = 8000):
+    #get photos for analysis with safeguards against resource overload
+    photos_cursor = photos.find({
+        "userId": ObjectId(user_id),
+        "ocr.status": "done",
+        "ocr.extractedText": {"$ne": "", "$exists": True}
+    }).sort("uploadedAt", -1)  # most recent first
+    
+    limited_photos = []
+    total_chars = 0
+    
+    for photo in photos_cursor:
+        #check if we've hit the photo limit
+        if len(limited_photos) >= max_photos:
+            print(f"Reached photo limit of {max_photos}")
+            break
+            
+        #get extracted text length
+        extracted_text = photo.get("ocr", {}).get("extractedText", "").strip()
+        text_length = len(extracted_text)
+        
+        #check if adding this would exceed character limit
+        if total_chars + text_length > max_chars:
+            print(f"Character limit reached: {total_chars} + {text_length} > {max_chars}")
+            break
+            
+        limited_photos.append(photo)
+        total_chars += text_length
+    
+    print(f"Selected {len(limited_photos)} photos with {total_chars} total characters")
+    return limited_photos
 
 def save_user_summary(user_id: str, photo_ids: list, model_used: str, result_json: dict, short_summary: str):
     #save analysis result to database
@@ -382,3 +437,25 @@ def get_latest_user_summary(user_id: str):
     except Exception as e:
         print(f"Error getting user summary: {e}")
         return None
+
+def update_photo_pipeline_result(photo_id: str, pipeline_name: str, result_json: dict):
+    #update pipeline result for a photo
+    try:
+        update_data = {
+            f"pipelines.{pipeline_name}.status": "done",
+            f"pipelines.{pipeline_name}.resultJson": result_json,
+            f"pipelines.{pipeline_name}.processedAt": datetime.utcnow()
+        }
+        
+        result = photos.update_one(
+            {"_id": ObjectId(photo_id)},
+            {"$set": update_data}
+        )
+        
+        print(f"Updated {pipeline_name} pipeline result for photo {photo_id}")
+        return result.modified_count > 0
+    except Exception as e:
+        print(f"Error updating photo pipeline result: {e}")
+        import traceback
+        traceback.print_exc()
+        return False

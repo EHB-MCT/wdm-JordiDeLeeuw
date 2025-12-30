@@ -34,7 +34,7 @@ export function Dashboard() {
 		fetchPhotos();
 		fetchAnalysis();
 		return () => {
-			Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
+			Object.values(imageUrls).forEach((url) => URL.revokeObjectURL(url));
 		};
 	}, []);
 
@@ -50,11 +50,11 @@ export function Dashboard() {
 			if (res.ok) {
 				const data = await res.json();
 				const photosList = data.photos || [];
-				
-				setPhotos(prev => {
+
+				setPhotos((prev) => {
 					const prevPhotosString = JSON.stringify(prev);
 					const newPhotosString = JSON.stringify(photosList);
-					
+
 					if (prevPhotosString !== newPhotosString) {
 						console.log("Photos state updated - data changed");
 						return photosList;
@@ -65,7 +65,7 @@ export function Dashboard() {
 				});
 
 				for (const photo of photosList) {
-					setImageUrls(prev => {
+					setImageUrls((prev) => {
 						if (!prev[photo.id]) {
 							fetchImageBlob(photo.id);
 						}
@@ -91,7 +91,7 @@ export function Dashboard() {
 			if (res.ok) {
 				const blob = await res.blob();
 				const url = URL.createObjectURL(blob);
-				setImageUrls(prev => ({ ...prev, [photoId]: url }));
+				setImageUrls((prev) => ({ ...prev, [photoId]: url }));
 			}
 		} catch (error) {
 			console.error("Failed to fetch image blob:", error);
@@ -223,11 +223,11 @@ export function Dashboard() {
 			if (res.ok) {
 				const data = await res.json();
 				const newStatus = data.photos || [];
-				
-				setProcessingStatus(prev => {
+
+				setProcessingStatus((prev) => {
 					const prevStatusString = JSON.stringify(prev);
 					const newStatusString = JSON.stringify(newStatus);
-					
+
 					if (prevStatusString !== newStatusString) {
 						console.log("Processing status updated");
 						return newStatus;
@@ -235,8 +235,8 @@ export function Dashboard() {
 					return prev;
 				});
 
-				const allDone = newStatus.every(p => p.status === "done" || p.status === "error");
-				const hasProcessing = newStatus.some(p => p.status === "received" || p.status === "extracting");
+				const allDone = newStatus.every((p) => p.status === "done" || p.status === "error");
+				const hasProcessing = newStatus.some((p) => p.status === "received" || p.status === "extracting");
 
 				console.log("Poll check:", { allDone, hasProcessing, total: newStatus.length });
 
@@ -248,9 +248,9 @@ export function Dashboard() {
 					setShowProcessingModal(false);
 					setProcessResults({
 						processedCount: newStatus.length,
-						successCount: newStatus.filter(p => p.status === "done").length,
-						errorCount: newStatus.filter(p => p.status === "error").length,
-						results: newStatus.map(p => ({
+						successCount: newStatus.filter((p) => p.status === "done").length,
+						errorCount: newStatus.filter((p) => p.status === "error").length,
+						results: newStatus.map((p) => ({
 							photoId: p.id,
 							filename: p.filename,
 							status: p.status,
@@ -300,8 +300,8 @@ export function Dashboard() {
 
 			if (res.ok) {
 				const data = await res.json();
-				
-				Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
+
+				Object.values(imageUrls).forEach((url) => URL.revokeObjectURL(url));
 				setImageUrls({});
 				setPhotos([]);
 				setProcessResults(null);
@@ -317,29 +317,41 @@ export function Dashboard() {
 
 	const getStatusBadgeClass = (status) => {
 		switch (status) {
-			case "done": return "status-badge done";
-			case "error": return "status-badge error";
-			case "processing": return "status-badge processing";
-			case "extracting": return "status-badge extracting";
-			case "received": return "status-badge received";
-			default: return "status-badge uploaded";
+			case "done":
+				return "status-badge done";
+			case "error":
+				return "status-badge error";
+			case "processing":
+				return "status-badge processing";
+			case "extracting":
+				return "status-badge extracting";
+			case "received":
+				return "status-badge received";
+			default:
+				return "status-badge uploaded";
 		}
 	};
 
 	const getStatusLabel = (status) => {
 		switch (status) {
-			case "done": return "✓ Klaar";
-			case "error": return "✗ Fout";
-			case "processing": return "⏳ Verwerken...";
-			case "extracting": return "🔍 Tekst extraheren...";
-			case "received": return "📨 Ontvangen";
-			default: return "📤 Geüpload";
+			case "done":
+				return "✓ Klaar";
+			case "error":
+				return "✗ Fout";
+			case "processing":
+				return "⏳ Verwerken...";
+			case "extracting":
+				return "🔍 Tekst extraheren...";
+			case "received":
+				return "📨 Ontvangen";
+			default:
+				return "📤 Geüpload";
 		}
 	};
 
 	const getProgressPercentage = () => {
 		if (processingStatus.length === 0) return 0;
-		const completed = processingStatus.filter(p => p.status === "done" || p.status === "error").length;
+		const completed = processingStatus.filter((p) => p.status === "done" || p.status === "error").length;
 		return Math.round((completed / processingStatus.length) * 100);
 	};
 
@@ -364,10 +376,17 @@ export function Dashboard() {
 	};
 
 	const handleAnalyze = async () => {
+		//prevent multiple simultaneous requests
+		if (analyzing) {
+			console.log("Analysis already in progress, ignoring click");
+			return;
+		}
+
 		setAnalyzing(true);
 		setAnalysisResults(null);
 
 		try {
+			console.log("Starting analysis request...");
 			const res = await fetch(`${API_BASE}/api/photos/analyze`, {
 				method: "POST",
 				headers: {
@@ -377,21 +396,30 @@ export function Dashboard() {
 
 			const data = await res.json();
 
+			// Debug logging
+			console.log("Raw LLM response:", data);
+			console.log("Analysis summary:", data.summary);
+			console.log("Analysis details:", data.details);
+
 			if (res.ok) {
 				setAnalysisResults(data);
 				setShowAnalysis(true);
 			} else {
-				alert(`Analyse mislukt: ${data.error || "Onbekende fout"}`);
+				if (res.status === 429) {
+					alert(`Please wait: ${data.error || "Analysis already in progress"}`);
+				} else {
+					alert(`Analyse mislukt: ${data.error || "Onbekende fout"}`);
+				}
 			}
 		} catch (error) {
+			console.error("Analysis error:", error);
 			alert(`Netwerkfout: ${error.message}`);
 		} finally {
 			setAnalyzing(false);
 		}
 	};
 
-	const canAnalyze = photos.length > 0 && 
-		photos.every(photo => photo.status === "done");
+	const canAnalyze = photos.length > 0 && photos.every((photo) => photo.status === "done");
 
 	return (
 		<div className="dashboard">
@@ -408,10 +436,10 @@ export function Dashboard() {
 						<div className="processing-status-list">
 							{processingStatus.map((photo, index) => (
 								<div key={photo.id} className="processing-status-item">
-									<span className="status-filename">Foto {index + 1}: {photo.originalFilename}</span>
-									<span className={getStatusBadgeClass(photo.status)}>
-										{getStatusLabel(photo.status)}
+									<span className="status-filename">
+										Foto {index + 1}: {photo.originalFilename}
 									</span>
+									<span className={getStatusBadgeClass(photo.status)}>{getStatusLabel(photo.status)}</span>
 								</div>
 							))}
 						</div>
@@ -440,17 +468,8 @@ export function Dashboard() {
 				<h2>Upload afbeeldingen</h2>
 				<form onSubmit={handleUpload} className="upload-form">
 					<label className="file-input-label">
-						<input
-							id="file-input"
-							type="file"
-							multiple
-							accept="image/*"
-							onChange={handleFileChange}
-							className="file-input"
-						/>
-						<span className="file-input-text">
-							{files.length > 0 ? `${files.length} bestand(en) geselecteerd` : "Kies bestanden"}
-						</span>
+						<input id="file-input" type="file" multiple accept="image/*" onChange={handleFileChange} className="file-input" />
+						<span className="file-input-text">{files.length > 0 ? `${files.length} bestand(en) geselecteerd` : "Kies bestanden"}</span>
 					</label>
 
 					{files.length > 0 && (
@@ -464,12 +483,7 @@ export function Dashboard() {
 					)}
 
 					<label className="location-optin-label">
-						<input 
-							type="checkbox" 
-							checked={locationOptIn} 
-							onChange={(e) => setLocationOptIn(e.target.checked)}
-							className="location-optin-checkbox"
-						/>
+						<input type="checkbox" checked={locationOptIn} onChange={(e) => setLocationOptIn(e.target.checked)} className="location-optin-checkbox" />
 						<span>Include GPS location data (if available in photos)</span>
 					</label>
 
@@ -496,21 +510,11 @@ export function Dashboard() {
 					<div className="photos-grid">
 						{photos.map((photo) => (
 							<div key={photo.id} className="photo-card">
-								{imageUrls[photo.id] ? (
-									<img
-										src={imageUrls[photo.id]}
-										alt={photo.filename}
-										className="photo-thumbnail"
-									/>
-								) : (
-									<div className="photo-thumbnail-loading">Laden...</div>
-								)}
+								{imageUrls[photo.id] ? <img src={imageUrls[photo.id]} alt={photo.filename} className="photo-thumbnail" /> : <div className="photo-thumbnail-loading">Laden...</div>}
 								<div className="photo-info">
 									<div className="photo-filename">{photo.originalFilename}</div>
 									<div className="photo-size">{(photo.size / 1024).toFixed(1)} KB</div>
-								<div className={getStatusBadgeClass(photo.status)}>
-									{getStatusLabel(photo.status)}
-								</div>
+									<div className={getStatusBadgeClass(photo.status)}>{getStatusLabel(photo.status)}</div>
 									{photo.extractedText && (
 										<div className="photo-extracted-text">
 											<strong>Gevonden tekst:</strong> {photo.extractedText}
@@ -531,19 +535,11 @@ export function Dashboard() {
 					{processing ? "Verwerken..." : "Next"}
 				</button>
 
-				<button 
-					className="analyze-btn" 
-					onClick={handleAnalyze} 
-					disabled={analyzing || !canAnalyze}
-				>
-					{analyzing ? "Analyzing important information..." : "Analyze"}
+				<button className="analyze-btn" onClick={handleAnalyze} disabled={analyzing || !canAnalyze}>
+					{analyzing ? "Loading model and analyzing..." : "Analyze"}
 				</button>
 
-				<button 
-					className="clear-btn" 
-					onClick={handleClearAll} 
-					disabled={processing || photos.length === 0}
-				>
+				<button className="clear-btn" onClick={handleClearAll} disabled={processing || photos.length === 0}>
 					Clear list
 				</button>
 
@@ -583,83 +579,225 @@ export function Dashboard() {
 
 				{showAnalysis && analysisResults && (
 					<div className="analysis-section">
-						<h3>Important things to remember</h3>
-						<div className="analysis-summary">
-							<p className="summary-text">{analysisResults.summary}</p>
-						</div>
-						
-						{analysisResults.details && (
-							<div className="analysis-details">
-								{analysisResults.details.highlights && analysisResults.details.highlights.length > 0 && (
-									<div className="detail-section">
-										<h4>🌟 Highlights</h4>
-										<ul>
-											{analysisResults.details.highlights.map((highlight, index) => (
-												<li key={index}>{highlight}</li>
-											))}
-										</ul>
-									</div>
-								)}
-
-								{analysisResults.details.action_items && analysisResults.details.action_items.length > 0 && (
-									<div className="detail-section">
-										<h4>✅ Action Items</h4>
-										<ul>
-											{analysisResults.details.action_items.map((item, index) => (
-												<li key={index}>{item}</li>
-											))}
-										</ul>
-									</div>
-								)}
-
-								{analysisResults.details.dates_deadlines && analysisResults.details.dates_deadlines.length > 0 && (
-									<div className="detail-section">
-										<h4>📅 Dates & Deadlines</h4>
-										<ul>
-											{analysisResults.details.dates_deadlines.map((item, index) => (
-												<li key={index}>
-													<strong>{item.date}</strong> - {item.context}
-												</li>
-											))}
-										</ul>
-									</div>
-								)}
-
-								{analysisResults.details.names_entities && analysisResults.details.names_entities.length > 0 && (
-									<div className="detail-section">
-										<h4>👥 Names & Entities</h4>
-										<ul>
-											{analysisResults.details.names_entities.map((name, index) => (
-												<li key={index}>{name}</li>
-											))}
-										</ul>
-									</div>
-								)}
-
-								{analysisResults.details.numbers_amounts && analysisResults.details.numbers_amounts.length > 0 && (
-									<div className="detail-section">
-										<h4>🔢 Numbers & Amounts</h4>
-										<ul>
-											{analysisResults.details.numbers_amounts.map((item, index) => (
-												<li key={index}>
-													<strong>{item.value}</strong> - {item.context}
-												</li>
-											))}
-										</ul>
-									</div>
-								)}
-
-								{analysisResults.details.key_takeaways && analysisResults.details.key_takeaways.length > 0 && (
-									<div className="detail-section">
-										<h4>💡 Key Takeaways</h4>
-										<ul>
-											{analysisResults.details.key_takeaways.map((takeaway, index) => (
-												<li key={index}>{takeaway}</li>
-											))}
-										</ul>
-									</div>
+						{analysisResults.error ? (
+							<div className="error-message">
+								<h3>❌ Analysis Error</h3>
+								<p>{analysisResults.error}</p>
+								{analysisResults.details && analysisResults.details.raw_output && (
+									<details style={{ marginTop: "1rem" }}>
+										<summary>🔍 Raw Model Output</summary>
+										<pre
+											style={{
+												background: "#1a1a1a",
+												border: "1px solid #333",
+												borderRadius: "8px",
+												padding: "1rem",
+												marginTop: "0.5rem",
+												color: "#fff",
+												fontSize: "0.9rem",
+												whiteSpace: "pre-wrap",
+												overflow: "auto",
+												maxHeight: "300px",
+											}}
+										>
+											{analysisResults.details.raw_output}
+										</pre>
+									</details>
 								)}
 							</div>
+						) : (
+							<>
+								<h3>Important things to remember</h3>
+								<div className="analysis-summary">
+									<p className="summary-text">{analysisResults.summary}</p>
+								</div>
+
+								{analysisResults.details && (
+									<div className="analysis-details">
+										{analysisResults.details.highlights && analysisResults.details.highlights.length > 0 && (
+											<div className="detail-section">
+												<h4>🌟 Highlights</h4>
+												<ul>
+													{analysisResults.details.highlights.map((highlight, index) => (
+														<li key={index}>{highlight}</li>
+													))}
+												</ul>
+											</div>
+										)}
+
+										{analysisResults.details.action_items && analysisResults.details.action_items.length > 0 && (
+											<div className="detail-section">
+												<h4>✅ Action Items</h4>
+												<ul>
+													{analysisResults.details.action_items.map((item, index) => (
+														<li key={index}>{item}</li>
+													))}
+												</ul>
+											</div>
+										)}
+
+										{analysisResults.details.dates_deadlines && analysisResults.details.dates_deadlines.length > 0 && (
+											<div className="detail-section">
+												<h4>📅 Dates & Deadlines</h4>
+												<ul>
+													{analysisResults.details.dates_deadlines.map((item, index) => (
+														<li key={index}>
+															<strong>{item.date}</strong> - {item.context}
+														</li>
+													))}
+												</ul>
+											</div>
+										)}
+
+										{analysisResults.details.names_entities && analysisResults.details.names_entities.length > 0 && (
+											<div className="detail-section">
+												<h4>👥 Names & Entities</h4>
+												<ul>
+													{analysisResults.details.names_entities.map((name, index) => (
+														<li key={index}>{name}</li>
+													))}
+												</ul>
+											</div>
+										)}
+
+										{analysisResults.details.numbers_amounts && analysisResults.details.numbers_amounts.length > 0 && (
+											<div className="detail-section">
+												<h4>🔢 Numbers & Amounts</h4>
+												<ul>
+													{analysisResults.details.numbers_amounts.map((item, index) => (
+														<li key={index}>
+															<strong>{item.value}</strong> - {item.context}
+														</li>
+													))}
+												</ul>
+											</div>
+										)}
+
+										{analysisResults.details.key_takeaways && analysisResults.details.key_takeaways.length > 0 && (
+											<div className="detail-section">
+												<h4>💡 Key Takeaways</h4>
+												<ul>
+													{analysisResults.details.key_takeaways.map((takeaway, index) => (
+														<li key={index}>{takeaway}</li>
+													))}
+												</ul>
+											</div>
+										)}
+
+										{Object.keys(analysisResults.details).length === 0 && (
+											<div className="detail-section">
+												<p>No structured analysis data available.</p>
+											</div>
+										)}
+									</div>
+								)}
+
+								{/* Per-photo analysis details */}
+								{analysisResults.perPhotoResults && Object.keys(analysisResults.perPhotoResults).length > 0 && (
+									<div className="detail-section">
+										<h4>📸 Per-Photo Analysis Details</h4>
+										<div
+											style={{
+												maxHeight: "300px",
+												overflowY: "auto",
+												background: "#1a1a1a",
+												border: "1px solid #333",
+												borderRadius: "8px",
+												padding: "1rem",
+												marginTop: "1rem",
+											}}
+										>
+											{Object.entries(analysisResults.perPhotoResults).map(([photoId, result]) => (
+												<div
+													key={photoId}
+													style={{
+														marginBottom: "1rem",
+														padding: "0.5rem",
+														borderBottom: "1px solid #333",
+													}}
+												>
+													<div
+														style={{
+															fontWeight: "bold",
+															color: "#4CAF50",
+															marginBottom: "0.5rem",
+														}}
+													>
+														📄 {result.filename} ({result.chunkCount} chunks)
+													</div>
+													<div style={{ fontSize: "0.9rem", lineHeight: "1.4" }}>
+														{result.analysis.highlights && result.analysis.highlights.length > 0 && (
+															<div style={{ marginBottom: "0.5rem" }}>
+																<strong>🌟 Highlights:</strong> {result.analysis.highlights.join(", ")}
+															</div>
+														)}
+														{result.analysis.action_items && result.analysis.action_items.length > 0 && (
+															<div style={{ marginBottom: "0.5rem" }}>
+																<strong>✅ Actions:</strong> {result.analysis.action_items.join(", ")}
+															</div>
+														)}
+														{result.analysis.names_entities && result.analysis.names_entities.length > 0 && (
+															<div style={{ marginBottom: "0.5rem" }}>
+																<strong>👥 Names:</strong> {result.analysis.names_entities.join(", ")}
+															</div>
+														)}
+														{result.analysis.dates_deadlines && result.analysis.dates_deadlines.length > 0 && (
+															<div style={{ marginBottom: "0.5rem" }}>
+																<strong>📅 Dates:</strong> {result.analysis.dates_deadlines.map((d) => `${d.date}`).join(", ")}
+															</div>
+														)}
+														{result.analysis.numbers_amounts && result.analysis.numbers_amounts.length > 0 && (
+															<div>
+																<strong>🔢 Numbers:</strong> {result.analysis.numbers_amounts.map((n) => n.value).join(", ")}
+															</div>
+														)}
+														{result.analysis.short_summary && (
+															<div
+																style={{
+																	fontStyle: "italic",
+																	marginTop: "0.5rem",
+																	color: "#ccc",
+																}}
+															>
+																📝 {result.analysis.short_summary}
+															</div>
+														)}
+													</div>
+												</div>
+											))}
+										</div>
+									</div>
+								)}
+
+								{/* Full JSON output for debugging */}
+								<div className="detail-section">
+									<h4>🔍 Complete Analysis Data</h4>
+									<div
+										style={{
+											maxHeight: "400px",
+											overflowY: "auto",
+											background: "#1a1a1a",
+											border: "1px solid #333",
+											borderRadius: "8px",
+											padding: "1rem",
+											marginTop: "1rem",
+										}}
+									>
+										<pre
+											style={{
+												color: "#fff",
+												fontSize: "0.9rem",
+												lineHeight: "1.4",
+												margin: 0,
+												whiteSpace: "pre-wrap",
+												wordBreak: "break-word",
+											}}
+										>
+											{JSON.stringify(analysisResults.details || analysisResults, null, 2)}
+										</pre>
+									</div>
+								</div>
+							</>
 						)}
 					</div>
 				)}

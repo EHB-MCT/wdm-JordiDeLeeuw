@@ -298,6 +298,24 @@
 	font-weight: 600;
 }
 
+/* Full JSON display styles */
+.analysis-json {
+	background: #1a1a1a;
+	border: 1px solid #333;
+	border-radius: 8px;
+	padding: 1rem;
+	margin-top: 1rem;
+}
+
+.analysis-json pre {
+	color: #fff;
+	font-size: 0.9rem;
+	line-height: 1.4;
+	margin: 0;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
 .loading-screen {
 	min-height: 100vh;
 	display: flex;

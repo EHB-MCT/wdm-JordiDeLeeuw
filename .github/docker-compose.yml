@@ -51,7 +51,7 @@ services:
     networks:
       - app-network
     #pull llama3 model on startup
-    entrypoint: ["sh", "-c", "ollama serve & ollama pull llama3 && wait"]
+    entrypoint: ["sh", "-c", "ollama serve & sleep 10 && ollama pull llama3 && wait"]
 
 #definieer het netwerk waar beide containers in zitten
 networks:
