@@ -337,11 +337,11 @@ def query_ollama(prompt: str, model: str = "llama3"):
         
         print(f"Sending LLM request to {ollama_url}")
         
-        #shorter timeout with connection timeout
+        #longer timeout for better analysis completion
         response = requests.post(
             ollama_url,
             json=payload,
-            timeout=(30, 60)  # (connect_timeout, read_timeout) 
+            timeout=(30, 240)  # (connect_timeout, read_timeout) - increased to reduce fallbacks
         )
         
         response.raise_for_status()
@@ -370,10 +370,20 @@ def get_photos_for_analysis(user_id: str):
 
 def get_photos_for_analysis_limited(user_id: str, max_photos: int = 20, max_chars: int = 8000):
     #get photos for analysis with safeguards against resource overload
+    print(f"DEBUG: Looking for photos with userId: {user_id}")
+    
+    # First check if any photos exist for this user with OCR done
+    total_user_photos = photos.count_documents({"userId": ObjectId(user_id)})
+    ocr_done_photos = photos.count_documents({
+        "userId": ObjectId(user_id), 
+        "ocr.status": "done"
+    })
+    print(f"DEBUG: User has {total_user_photos} total photos, {ocr_done_photos} with OCR done")
+    
     photos_cursor = photos.find({
         "userId": ObjectId(user_id),
         "ocr.status": "done",
-        "ocr.extractedText": {"$ne": "", "$exists": True}
+        "ocr.extractedText": {"$exists": True, "$ne": ""}
     }).sort("uploadedAt", -1)  # most recent first
     
     limited_photos = []
@@ -459,3 +469,69 @@ def update_photo_pipeline_result(photo_id: str, pipeline_name: str, result_json:
         import traceback
         traceback.print_exc()
         return False
+
+def update_analysis_progress(photo_id: str, status: str, error_message: str = None):
+    """Update analysis progress status for a photo"""
+    try:
+        update_data = {f"pipelines.userExtract.status": status}
+        
+        if error_message:
+            update_data[f"pipelines.userExtract.errorMessage"] = error_message
+            
+        result = photos.update_one(
+            {"_id": ObjectId(photo_id)},
+            {"$set": update_data}
+        )
+        if result.modified_count > 0:
+            print(f"ANALYSIS PROGRESS: Updated photo {photo_id} status to {status}")
+        else:
+            print(f"ANALYSIS PROGRESS: Warning - photo {photo_id} status update may have failed")
+        return result.modified_count > 0
+    except Exception as e:
+        print(f"ANALYSIS PROGRESS: Error updating analysis progress for photo {photo_id}: {e}")
+        return False
+
+def get_analysis_progress(user_id: str):
+    """Get analysis progress for all photos of a user"""
+    try:
+        user_photos = photos.find(
+            {"userId": ObjectId(user_id)}, 
+            {
+                "_id": 1,
+                "originalFilename": 1,
+                "pipelines.userExtract.status": 1,
+                "pipelines.userExtract.errorMessage": 1,
+                "ocr.status": 1
+            }
+        ).sort("uploadedAt", 1)
+        
+        result = []
+        for photo in user_photos:
+            result.append({
+                "id": str(photo["_id"]),
+                "filename": photo.get("originalFilename", "unknown"),
+                "analysisStatus": photo.get("pipelines", {}).get("userExtract", {}).get("status", "pending"),
+                "analysisError": photo.get("pipelines", {}).get("userExtract", {}).get("errorMessage"),
+                "ocrStatus": photo.get("ocr", {}).get("status", "uploaded")
+            })
+        return result
+    except Exception as e:
+        print(f"Error getting analysis progress: {e}")
+        return []
+
+def initialize_analysis_status(user_id: str):
+    """Initialize analysis status to 'queued' for photos with completed OCR"""
+    try:
+        result = photos.update_many(
+            {
+                "userId": ObjectId(user_id),
+                "ocr.status": "done",
+                "pipelines.userExtract.status": {"$in": ["pending", "error"]}
+            },
+            {"$set": {"pipelines.userExtract.status": "queued"}}
+        )
+        print(f"Initialized analysis status for {result.modified_count} photos")
+        return result.modified_count
+    except Exception as e:
+        print(f"Error initializing analysis status: {e}")
+        return 0

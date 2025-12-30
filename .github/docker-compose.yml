@@ -60,7 +60,7 @@ services:
       - OLLAMA_MAX_BATCH_SIZE=512     # Reduce batch size
       - CUDA_VISIBLE_DEVICES=        # Disable GPU (if present)
     #CPU resource limits to prevent overheating
-    cpus: '1.5'  # Limit to 1.5 CPU cores max (Docker Compose format)
+    cpus: '2.5'  # Limit to 2.5 CPU cores max (Docker Compose format)
     # memory: 4g    # Optional: add memory limit if needed
 
 #definieer het netwerk waar beide containers in zitten

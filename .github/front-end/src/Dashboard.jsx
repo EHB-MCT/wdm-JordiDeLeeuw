@@ -25,7 +25,10 @@ export function Dashboard() {
 	const [analysisResults, setAnalysisResults] = useState(null);
 	const [showAnalysis, setShowAnalysis] = useState(false);
 	const [analysisProgress, setAnalysisProgress] = useState({ currentPhoto: 0, totalPhotos: 0, status: 'idle' });
+	const [analysisDetails, setAnalysisDetails] = useState([]);
+	const [analysisCounters, setAnalysisCounters] = useState({ photos_found: 0, photos_started: 0, photos_completed: 0, photos_failed: 0, photos_fallback: 0, photos_queued: 0 });
 	const pollIntervalRef = useRef(null);
+	const analysisPollIntervalRef = useRef(null);
 	const renderCountRef = useRef(0);
 
 	renderCountRef.current += 1;
@@ -279,6 +282,7 @@ export function Dashboard() {
 		return () => {
 			console.log("Cleanup - stopping polling");
 			stopPolling();
+			stopAnalysisPolling();
 		};
 	}, []);
 
@@ -356,6 +360,48 @@ export function Dashboard() {
 		return Math.round((completed / processingStatus.length) * 100);
 	};
 
+	const getAnalysisStatusLabel = (status) => {
+		switch (status) {
+			case "completed":
+				return "✓ Completed";
+			case "llm_failed":
+				return "✗ LLM failed";
+			case "fallback_used":
+				return "⚠ Fallback used";
+			case "processing":
+				return "⏳ Processing...";
+			case "sent_to_llm":
+				return "🤖 Sent to LLM";
+			case "queued":
+				return "📋 Queued";
+			case "pending":
+				return "⏸️ Pending";
+			default:
+				return "❓ Unknown";
+		}
+	};
+
+	const getAnalysisStatusClass = (status) => {
+		switch (status) {
+			case "completed":
+				return "analysis-status completed";
+			case "llm_failed":
+				return "analysis-status failed";
+			case "fallback_used":
+				return "analysis-status fallback";
+			case "processing":
+				return "analysis-status processing";
+			case "sent_to_llm":
+				return "analysis-status sent";
+			case "queued":
+				return "analysis-status queued";
+			case "pending":
+				return "analysis-status pending";
+			default:
+				return "analysis-status unknown";
+		}
+	};
+
 	const fetchAnalysis = async () => {
 		try {
 			const res = await fetch(`${API_BASE}/api/photos/summary`, {
@@ -376,6 +422,45 @@ export function Dashboard() {
 		}
 	};
 
+	const startAnalysisPolling = () => {
+		console.log("Starting analysis progress polling");
+		fetchAnalysisProgress();
+		analysisPollIntervalRef.current = setInterval(fetchAnalysisProgress, 2000);
+	};
+
+	const stopAnalysisPolling = () => {
+		if (analysisPollIntervalRef.current) {
+			console.log("Clearing analysis polling interval");
+			clearInterval(analysisPollIntervalRef.current);
+			analysisPollIntervalRef.current = null;
+		}
+	};
+
+	const fetchAnalysisProgress = async () => {
+		try {
+			const res = await fetch(`${API_BASE}/api/photos/analysis-progress`, {
+				headers: {
+					"X-User-Id": user.userId,
+				},
+			});
+
+			if (res.ok) {
+				const data = await res.json();
+				setAnalysisDetails(data.photos || []);
+				setAnalysisCounters(data.counters || {});
+				
+				// Auto-stop polling when all photos are processed
+				const totalProcessed = data.counters.photos_completed + data.counters.photos_failed + data.counters.photos_fallback;
+				if (totalProcessed > 0 && totalProcessed === data.counters.photos_started) {
+					console.log("Analysis complete - stopping polling");
+					stopAnalysisPolling();
+				}
+			}
+		} catch (error) {
+			console.error("Failed to fetch analysis progress:", error);
+		}
+	};
+
 	const handleAnalyze = async () => {
 		//prevent multiple simultaneous requests
 		if (analyzing) {
@@ -386,6 +471,11 @@ export function Dashboard() {
 		setAnalyzing(true);
 		setAnalysisResults(null);
 		setAnalysisProgress({ currentPhoto: 0, totalPhotos: photos.length, status: 'analyzing' });
+		setAnalysisDetails([]);
+		setAnalysisCounters({ photos_found: 0, photos_started: 0, photos_completed: 0, photos_failed: 0, photos_fallback: 0, photos_queued: 0 });
+
+		// Start real-time progress polling
+		startAnalysisPolling();
 
 		try {
 			console.log("Starting analysis request...");
@@ -402,16 +492,30 @@ export function Dashboard() {
 			console.log("Raw LLM response:", data);
 			console.log("Analysis summary:", data.summary);
 			console.log("Analysis details:", data.details);
+			console.log("Progress counters:", data.progress);
 			console.log("Photos analyzed:", data.analyzedPhotos);
 
 			if (res.ok) {
 				setAnalysisResults(data);
 				setShowAnalysis(true);
 				setAnalysisProgress({ currentPhoto: data.analyzedPhotos, totalPhotos: data.analyzedPhotos, status: 'complete' });
+				
+				// Update counters from final response
+				if (data.progress) {
+					setAnalysisCounters(data.progress);
+				}
 			} else {
 				setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: 'error' });
+				stopAnalysisPolling();
 				if (res.status === 429) {
 					alert(`Please wait: ${data.error || "Analysis already in progress"}`);
+				} else if (res.status === 400) {
+					// More specific error for no photos
+					if (data.error && data.error.includes("No photos with completed OCR")) {
+						alert("No photos with extracted text found. Please make sure photos have been processed (Next button) before analyzing.");
+					} else {
+						alert(`Analyse mislukt: ${data.error || "Onbekende fout"}`);
+					}
 				} else {
 					alert(`Analyse mislukt: ${data.error || "Onbekende fout"}`);
 				}
@@ -419,6 +523,7 @@ export function Dashboard() {
 		} catch (error) {
 			console.error("Failed to fetch analysis:", error);
 			setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: 'error' });
+			stopAnalysisPolling();
 			alert(`Netwerkfout: ${error.message}`);
 		} finally {
 			setAnalyzing(false);
@@ -549,10 +654,42 @@ export function Dashboard() {
 						</>
 					) : "Analyze"}
 				</button>
+
+				{/* Explanation for why analyze is disabled */}
+				{!canAnalyze && !analyzing && photos.length > 0 && (
+					<div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#ff9800' }}>
+						⚠️ Analysis requires photos to have completed text extraction (status: "✓ Klaar"). 
+						Click "Next" to process photos first.
+					</div>
+				)}
+
+				{!canAnalyze && !analyzing && photos.length === 0 && (
+					<div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#888' }}>
+						Upload photos and click "Next" to enable analysis.
+					</div>
+				)}
+
+				{/* Analysis progress explanation */}
+				{canAnalyze && !analyzing && (
+					<div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#888' }}>
+						Analysis may take time. Progress is shown per photo below.
+					</div>
+				)}
 				
 				{analysisProgress.status !== 'idle' && (
 					<div className="analysis-progress" style={{ marginTop: '1rem', padding: '1rem', background: '#1a1a1a', borderRadius: '8px' }}>
 						<h4>📸 Analysis Progress</h4>
+						
+						{/* Progress counters */}
+						<div style={{ marginBottom: '1rem', fontSize: '0.9rem' }}>
+							<div><strong>{analysisCounters.photos_found} photos found</strong></div>
+							<div>{analysisCounters.photos_started} photos started</div>
+							<div style={{ color: '#4CAF50' }}>{analysisCounters.photos_completed} completed</div>
+							<div style={{ color: '#ff9800' }}>{analysisCounters.photos_fallback} fallback</div>
+							<div style={{ color: '#f44336' }}>{analysisCounters.photos_failed} failed</div>
+							{analysisCounters.photos_queued > 0 && <div style={{ color: '#888' }}>{analysisCounters.photos_queued} queued</div>}
+						</div>
+						
 						<div style={{ marginBottom: '0.5rem', fontSize: '0.9rem' }}>
 							Status: <span style={{ 
 								color: analysisProgress.status === 'complete' ? '#4CAF50' : 
@@ -565,14 +702,81 @@ export function Dashboard() {
 							</span>
 						</div>
 						
-						{analysisProgress.status === 'analyzing' && (
+						{/* Progress bar */}
+						{analysisProgress.status === 'analyzing' && analysisCounters.photos_started > 0 && (
 							<div style={{ 
 								marginTop: '1rem', 
 								height: '4px', 
 								background: '#333', 
 								borderRadius: '2px',
-								width: `${(analysisProgress.currentPhoto / analysisProgress.totalPhotos) * 100}%`
+								width: `${((analysisCounters.photos_completed + analysisCounters.photos_failed + analysisCounters.photos_fallback) / analysisCounters.photos_started) * 100}%`
 							}} />
+						)}
+
+						{/* Per-photo status list */}
+						{analysisDetails.length > 0 && (
+							<div style={{ marginTop: '1rem' }}>
+								<h5 style={{ marginBottom: '0.5rem', fontSize: '0.9rem' }}>Per-Photo Status:</h5>
+								<div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+									{analysisDetails.map((photo, index) => (
+										<div key={photo.id} style={{ 
+											display: 'flex', 
+											justifyContent: 'space-between', 
+											alignItems: 'center',
+											padding: '0.25rem 0',
+											fontSize: '0.8rem',
+											borderBottom: '1px solid #333'
+										}}>
+											<span style={{ color: '#ccc', marginRight: '0.5rem' }}>
+												{photo.filename || `Photo ${index + 1}`}
+											</span>
+											<span className={getAnalysisStatusClass(photo.analysisStatus)} style={{
+												fontSize: '0.75rem',
+												padding: '2px 6px',
+												borderRadius: '4px',
+												background: photo.analysisStatus === 'completed' ? '#4CAF50' :
+															 photo.analysisStatus === 'llm_failed' ? '#f44336' :
+															 photo.analysisStatus === 'fallback_used' ? '#ff9800' :
+															 photo.analysisStatus === 'processing' ? '#2196F3' :
+															 photo.analysisStatus === 'sent_to_llm' ? '#9C27B0' :
+															 photo.analysisStatus === 'queued' ? '#607D8B' : '#666'
+											}}>
+												{getAnalysisStatusLabel(photo.analysisStatus)}
+											</span>
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+					</div>
+				)}
+
+				{/* Analysis completion message */}
+				{analysisProgress.status === 'complete' && (
+					<div style={{ 
+						marginTop: '1rem', 
+						padding: '1rem', 
+						background: '#1a3d1a', 
+						border: '1px solid #4CAF50', 
+						borderRadius: '8px',
+						fontSize: '0.9rem'
+					}}>
+						{analysisCounters.photos_fallback > 0 || analysisCounters.photos_failed > 0 ? (
+							<div>
+								<strong>Analysis completed with issues:</strong> The system attempted analysis but 
+								{analysisCounters.photos_fallback > 0 && ` ${analysisCounters.photos_fallback} photo(s) used fallback logic`}
+								{analysisCounters.photos_fallback > 0 && analysisCounters.photos_failed > 0 && ' and'}
+								{analysisCounters.photos_failed > 0 && ` ${analysisCounters.photos_failed} photo(s) failed`}.
+								{analysisCounters.photos_fallback > 0 && (
+									<div style={{ marginTop: '0.5rem', fontStyle: 'italic' }}>
+										<strong>Important:</strong> The system attempted analysis but the model did not respond in time for some photos.
+									</div>
+								)}
+							</div>
+						) : (
+							<div>
+								<strong>Analysis completed successfully!</strong> All {analysisCounters.photos_completed} photos were processed without issues.
+							</div>
 						)}
 					</div>
 				)}

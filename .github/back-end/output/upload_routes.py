@@ -528,11 +528,19 @@ def analyze_photos():
         
         analyze_photos._locks[user_id] = current_time
 
+        # Initialize analysis status for all eligible photos
+        print(f"ANALYSIS PROGRESS: Initializing analysis status for user {user_id}")
+        queued_count = auth_backend.initialize_analysis_status(user_id)
+        print(f"ANALYSIS PROGRESS: Queued {queued_count} photos for analysis")
+
         #get photos with completed OCR - LIMIT to prevent resource overload
         photos_data = auth_backend.get_photos_for_analysis_limited(user_id, max_photos=20, max_chars=8000)
         
         if len(photos_data) == 0:
             return jsonify({"error": "No photos with completed OCR found to analyze"}), 400
+        
+        print(f"Found {len(photos_data)} photos with OCR text for analysis")
+        print(f"ANALYSIS PROGRESS: Starting analysis of {len(photos_data)} photos for user {user_id}")
 
 #chunking-based analysis per photo with total limits
         max_photos = 20
@@ -543,21 +551,40 @@ def analyze_photos():
         per_photo_results = {}
         all_photo_data = []
         
+        analysis_progress = {
+            "photos_found": len(photos_data),
+            "photos_started": 0,
+            "photos_completed": 0,
+            "photos_failed": 0,
+            "photos_fallback": 0
+        }
+        
         for photo_idx, photo in enumerate(photos_data[:max_photos]):
+            photo_id = str(photo["_id"])
+            filename = photo.get("originalFilename", f"photo_{photo_id}")
+            
+            print(f"ANALYSIS PROGRESS: Starting photo {photo_idx + 1}/{len(photos_data)}: {filename}")
+            
+            # Update status to processing
+            auth_backend.update_analysis_progress(photo_id, "processing")
+            analysis_progress["photos_started"] += 1
+            
             # Add pacing between photos to allow CPU cooling
             if photo_idx > 0:
-                print(f"Pausing 3 seconds before photo {photo_idx + 1} for CPU cooling...")
+                print(f"ANALYSIS PROGRESS: Pausing 3 seconds before photo {photo_idx + 1} for CPU cooling...")
                 time.sleep(3)  # Allow CPU to cool between photos
-            photo_id = str(photo["_id"])
+                
             photo_info = {
                 "id": photo_id,
-                "filename": photo.get("originalFilename", f"photo_{photo_id}"),
+                "filename": filename,
                 "uploaded_at": photo.get("uploadedAt", "").strftime("%Y-%m-%d %H:%M") if photo.get("uploadedAt") else "unknown",
                 "extracted_text": photo.get("ocr", {}).get("extractedText", "").strip()
             }
             
             if not photo_info["extracted_text"]:
-                print(f"Skipping photo {photo_idx + 1} - no extracted text")
+                print(f"ANALYSIS PROGRESS: Skipping photo {photo_idx + 1} - no extracted text")
+                auth_backend.update_analysis_progress(photo_id, "completed")
+                analysis_progress["photos_completed"] += 1
                 continue
             
             #chunk the text
@@ -566,30 +593,65 @@ def analyze_photos():
             #limit chunks per photo
             if len(chunks) > max_chunks_per_photo:
                 chunks = chunks[:max_chunks_per_photo]
-                print(f"Limited photo {photo_idx + 1} to {max_chunks_per_photo} chunks")
+                print(f"ANALYSIS PROGRESS: Limited photo {photo_idx + 1} to {max_chunks_per_photo} chunks")
             
-            print(f"Processing photo {photo_idx + 1}: {photo_info['filename']}, {len(chunks)} chunks, {len(photo_info['extracted_text'])} chars")
+            print(f"ANALYSIS PROGRESS: Processing photo {photo_idx + 1}: {photo_info['filename']}, {len(chunks)} chunks, {len(photo_info['extracted_text'])} chars")
             
             chunk_results = []
+            photo_failed = False
+            fallback_used = False
             
             #analyze each chunk
             for chunk_idx, chunk in enumerate(chunks):
-                print(f"  Analyzing chunk {chunk_idx + 1}/{len(chunks)} ({len(chunk)} chars)")
+                print(f"ANALYSIS PROGRESS: Analyzing chunk {chunk_idx + 1}/{len(chunks)} ({len(chunk)} chars)")
+                
+                # Update status to sending to LLM
+                if chunk_idx == 0:
+                    auth_backend.update_analysis_progress(photo_id, "sent_to_llm")
                 
                 chunk_prompt = create_chunk_prompt(photo_info, chunk, chunk_idx, len(chunks))
                 
                 try:
+                    print(f"ANALYSIS PROGRESS: Sending chunk {chunk_idx + 1} to LLM for {filename}")
                     chunk_response = auth_backend.query_ollama(chunk_prompt, "llama3")
                     chunk_result = parse_llm_response(chunk_response)
                     
                     if chunk_result:
                         chunk_results.append(chunk_result)
-                        print(f"    ✓ Chunk {chunk_idx + 1} analyzed successfully")
+                        print(f"ANALYSIS PROGRESS: ✓ Chunk {chunk_idx + 1} analyzed successfully for {filename}")
                     else:
-                        print(f"    ✗ Chunk {chunk_idx + 1} failed to parse")
+                        print(f"ANALYSIS PROGRESS: ✗ Chunk {chunk_idx + 1} failed to parse for {filename}")
+                        photo_failed = True
+                        # Create fallback result for failed LLM parse
+                        fallback_result = {
+                            "highlights": [f"Text from {photo_info['filename']}"],
+                            "action_items": [],
+                            "dates_deadlines": [],
+                            "names_entities": [],
+                            "numbers_amounts": [],
+                            "key_takeaways": ["Text content requires manual review"],
+                            "short_summary": f"Extracted text from {photo_info['filename']}"
+                        }
+                        chunk_results.append(fallback_result)
+                        fallback_used = True
+                        print(f"ANALYSIS PROGRESS: ⚠ Using fallback result for chunk {chunk_idx + 1} of {filename}")
                         
                 except Exception as e:
-                    print(f"    ✗ Chunk {chunk_idx + 1} error: {e}")
+                    print(f"ANALYSIS PROGRESS: ✗ Chunk {chunk_idx + 1} error for {filename}: {e}")
+                    photo_failed = True
+                    # Create fallback result for failed LLM request
+                    fallback_result = {
+                        "highlights": [f"Text from {photo_info['filename']}"],
+                        "action_items": [],
+                        "dates_deadlines": [],
+                        "names_entities": [],
+                        "numbers_amounts": [],
+                        "key_takeaways": ["Text content requires manual review"],
+                        "short_summary": f"Extracted text from {photo_info['filename']}"
+                    }
+                    chunk_results.append(fallback_result)
+                    fallback_used = True
+                    print(f"ANALYSIS PROGRESS: ⚠ Using fallback result for chunk {chunk_idx + 1} of {filename} due to error: {e}")
             
             #merge chunk results for this photo
             if chunk_results:
@@ -598,19 +660,20 @@ def analyze_photos():
                 #create final photo summary
                 summary_prompt = create_photo_summary_prompt(photo_info, merged_photo_analysis)
                 try:
+                    print(f"ANALYSIS PROGRESS: Creating photo summary for {filename}")
                     summary_response = auth_backend.query_ollama(summary_prompt, "llama3")
                     summary_result = parse_llm_response(summary_response)
                     
                     if summary_result and "short_summary" in summary_result:
                         merged_photo_analysis["short_summary"] = summary_result["short_summary"]
-                        print(f"    ✓ Photo summary created: {summary_result['short_summary'][:100]}...")
+                        print(f"ANALYSIS PROGRESS: ✓ Photo summary created for {filename}: {summary_result['short_summary'][:100]}...")
                     else:
                         #fallback: use best existing summary or create generic one
                         existing_summaries = [cr.get("short_summary", "") for cr in chunk_results if cr.get("short_summary")]
                         merged_photo_analysis["short_summary"] = existing_summaries[0] if existing_summaries else f"Analysis of {photo_info['filename']} with {len(chunk_results)} processed chunks"
                         
                 except Exception as e:
-                    print(f"    ✗ Photo summary error: {e}")
+                    print(f"ANALYSIS PROGRESS: ✗ Photo summary error for {filename}: {e}")
                     merged_photo_analysis["short_summary"] = f"Analysis of {photo_info['filename']}"
                 
                 #store photo result
@@ -625,9 +688,24 @@ def analyze_photos():
                 try:
                     auth_backend.update_photo_pipeline_result(photo_id, "userExtract", merged_photo_analysis)
                 except Exception as e:
-                    print(f"    ⚠ Failed to save pipeline result: {e}")
+                    print(f"ANALYSIS PROGRESS: ⚠ Failed to save pipeline result for {filename}: {e}")
             
-            print(f"  Photo {photo_idx + 1} complete: {len(chunk_results)} chunks analyzed")
+            # Update final status based on what happened
+            if photo_failed:
+                if fallback_used:
+                    auth_backend.update_analysis_progress(photo_id, "fallback_used")
+                    analysis_progress["photos_fallback"] += 1
+                    print(f"ANALYSIS PROGRESS: Photo {filename} completed with fallback")
+                else:
+                    auth_backend.update_analysis_progress(photo_id, "llm_failed", "LLM processing failed")
+                    analysis_progress["photos_failed"] += 1
+                    print(f"ANALYSIS PROGRESS: Photo {filename} failed")
+            else:
+                auth_backend.update_analysis_progress(photo_id, "completed")
+                analysis_progress["photos_completed"] += 1
+                print(f"ANALYSIS PROGRESS: Photo {filename} completed successfully")
+            
+            print(f"ANALYSIS PROGRESS: Photo {photo_idx + 1}/{len(photos_data)} complete: {len(chunk_results)} chunks analyzed")
         
         #create final combined summary across all photos
         if all_photo_data:
@@ -669,17 +747,32 @@ The summary should be natural human text covering the main insights from all pho
             
             final_result_json = final_merged
         else:
-            final_result_json = {
-                "highlights": [],
-                "action_items": [],
-                "dates_deadlines": [],
-                "names_entities": [],
-                "numbers_amounts": [],
-                "key_takeaways": [],
-                "short_summary": "No photos with extracted text found to analyze"
-            }
+            # Differentiate between no photos found vs processing failures
+            if len(per_photo_results) == 0:
+                # All photos failed processing (likely LLM timeouts)
+                final_result_json = {
+                    "highlights": [],
+                    "action_items": [],
+                    "dates_deadlines": [],
+                    "names_entities": [],
+                    "numbers_amounts": [],
+                    "key_takeaways": [],
+                    "short_summary": f"Found {len(photos_data)} photos with text, but analysis failed due to processing errors. Try again with fewer photos."
+                }
+            else:
+                # This should not happen, but fallback to original message
+                final_result_json = {
+                    "highlights": [],
+                    "action_items": [],
+                    "dates_deadlines": [],
+                    "names_entities": [],
+                    "numbers_amounts": [],
+                    "key_takeaways": [],
+                    "short_summary": "No photos with extracted text found to analyze"
+                }
 
-        print(f"Chunked analysis complete for user {user_id}")
+        print(f"ANALYSIS PROGRESS: Chunked analysis complete for user {user_id}")
+        print(f"ANALYSIS PROGRESS: Final summary - {len(per_photo_results)} photos processed, {analysis_progress['photos_completed']} completed, {analysis_progress['photos_fallback']} fallback, {analysis_progress['photos_failed']} failed")
         
         #save combined user summary
         try:
@@ -703,6 +796,7 @@ The summary should be natural human text covering the main insights from all pho
             "details": final_result_json,
             "analyzedPhotos": len(per_photo_results),
             "summaryId": str(summary_id),
+            "progress": analysis_progress,
             "perPhotoResults": {
                 str(pid): {
                     "filename": result["photo_info"]["filename"],
@@ -725,6 +819,40 @@ The summary should be natural human text covering the main insights from all pho
         #clean up the lock
         if hasattr(analyze_photos, '_locks') and user_id in analyze_photos._locks:
             del analyze_photos._locks[user_id]
+
+@upload_bp.route("/api/photos/analysis-progress", methods=["GET"])
+def get_analysis_progress():
+    """Get real-time analysis progress for user's photos"""
+    try:
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+
+        progress_data = auth_backend.get_analysis_progress(user_id)
+        
+        # Calculate counters
+        counters = {
+            "photos_found": len(progress_data),
+            "photos_started": len([p for p in progress_data if p["analysisStatus"] in ["processing", "sent_to_llm", "llm_failed", "fallback_used", "completed"]]),
+            "photos_completed": len([p for p in progress_data if p["analysisStatus"] == "completed"]),
+            "photos_failed": len([p for p in progress_data if p["analysisStatus"] == "llm_failed"]),
+            "photos_fallback": len([p for p in progress_data if p["analysisStatus"] == "fallback_used"]),
+            "photos_queued": len([p for p in progress_data if p["analysisStatus"] == "queued"])
+        }
+        
+        return jsonify({
+            "photos": progress_data,
+            "counters": counters
+        }), 200
+
+    except Exception as e:
+        print(f"Get analysis progress error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Failed to retrieve analysis progress",
+            "details": str(e)
+        }), 500
 
 @upload_bp.route("/api/photos/summary", methods=["GET"])
 def get_summary():
