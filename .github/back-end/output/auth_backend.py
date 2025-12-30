@@ -38,6 +38,15 @@ def get_user_by_email(email: str):
     #zoekt een user op basis van email
     return users.find_one({"email": email})
 
+def get_user_by_id(user_id: str):
+    """Get user by ObjectId"""
+    try:
+        user = users.find_one({"_id": ObjectId(user_id)})
+        return user
+    except Exception as e:
+        print(f"Error getting user by ID {user_id}: {e}")
+        return None
+
 def create_user(email: str, password: str, is_admin: bool = False):
     #maakt een nieuwe user aan met gehashed wachtwoord
     hashed_pw = hash_password(password)
@@ -448,6 +457,48 @@ def get_latest_user_summary(user_id: str):
     except Exception as e:
         print(f"Error getting user summary: {e}")
         return None
+
+def check_admin_status(user_id: str):
+    """Check if user has admin privileges"""
+    try:
+        user = users.find_one(
+            {"_id": ObjectId(user_id)},
+            {"isAdmin": True}  # Fixed: check for boolean true, not integer 1
+        )
+        return user and user.get("isAdmin", False)
+    except Exception as e:
+        print(f"Error checking admin status for user {user_id}: {e}")
+        return False
+
+def get_admin_stats():
+    """Get admin statistics efficiently using count queries"""
+    try:
+        # Total users count
+        total_users = users.count_documents({})
+        
+        # Total photos count  
+        total_photos = photos.count_documents({})
+        
+        # OCR completed count (photos where ocr.status == "done")
+        ocr_completed = photos.count_documents({"ocr.status": "done"})
+        
+        # Analyses completed count (documents in summaries collection)
+        analyses_completed = summaries.count_documents({})
+        
+        return {
+            "totalUsers": total_users,
+            "totalPhotos": total_photos,
+            "ocrCompleted": ocr_completed,
+            "analysesCompleted": analyses_completed
+        }
+    except Exception as e:
+        print(f"Error getting admin stats: {e}")
+        return {
+            "totalUsers": 0,
+            "totalPhotos": 0,
+            "ocrCompleted": 0,
+            "analysesCompleted": 0
+        }
 
 def update_photo_pipeline_result(photo_id: str, pipeline_name: str, result_json: dict):
     #update pipeline result for a photo

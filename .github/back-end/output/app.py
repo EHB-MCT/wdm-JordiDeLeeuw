@@ -3,6 +3,7 @@ from flask_cors import CORS
 from extract_text import ocr_bp
 from auth_routes import auth_bp
 from upload_routes import upload_bp
+from admin_routes import admin_bp
 
 #maakt de hoofd-flask-app aan
 app = Flask(__name__)
@@ -14,6 +15,7 @@ CORS(app, supports_credentials=True, origins=["http://localhost:5173"], allow_he
 app.register_blueprint(ocr_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(upload_bp)
+app.register_blueprint(admin_bp)
 
 @app.errorhandler(500)
 def internal_error(error):
