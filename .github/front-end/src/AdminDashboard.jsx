@@ -18,17 +18,16 @@ const demoData = {
 		phonePatterns: 12,
 		nameEntities: 34,
 	},
-	weeklyToneTrends: Array.from({ length: 4 }, (_, i) => ({
-		week: `Week ${i + 1}`,
-		profanity_hits: Math.floor(Math.random() * 15) + 3,
-		aggression_hits: Math.floor(Math.random() * 10) + 2,
-		shouting_hits: Math.floor(Math.random() * 8) + 1,
-	})),
-	locationLeakageSignals: {
-		explicit_location_keywords: 18,
-		travel_route_context: 12,
-		none: 45,
-	},
+	professionalLiabilitySignals: [
+		{ name: "Aggression Hits", count: 14 },
+		{ name: "Profanity Hits", count: 9 },
+		{ name: "Shouting Hits", count: 22 },
+	],
+	locationLeakageSignals: [
+		{ name: "Explicit location keywords", count: 18 },
+		{ name: "Travel/route context", count: 27 },
+		{ name: "No location signals", count: 5 },
+	],
 };
 
 export function AdminDashboard() {
@@ -136,16 +135,12 @@ export function AdminDashboard() {
 		}));
 	}, [dataSource]);
 
-	const weeklyToneData = useMemo(() => {
-		return dataSource?.weeklyToneTrends || demoData.weeklyToneTrends;
+	const liabilitySignalsData = useMemo(() => {
+		return dataSource?.professionalLiabilitySignals || demoData.professionalLiabilitySignals;
 	}, [dataSource]);
 
 	const locationLeakageData = useMemo(() => {
-		const obj = dataSource?.locationLeakageSignals || demoData.locationLeakageSignals;
-		return Object.entries(obj).map(([key, count]) => ({
-			category: key.replace(/([A-Z])/g, " ").replace(/^./, (c) => c.toUpperCase()),
-			count,
-		}));
+		return dataSource?.locationLeakageSignals || demoData.locationLeakageSignals;
 	}, [dataSource]);
 
 	if (loading) {
@@ -261,33 +256,31 @@ export function AdminDashboard() {
 					<div className="chart-note">Higher counts indicate more social context exposure</div>
 				</div>
 
-				{/* Chart 3: Communication Tone Risk Indicators */}
+				{/* Chart 3: Professional Liability Signals */}
 				<div className="chart-card">
-					<h2>Communication Tone Risk Indicators (OCR text)</h2>
-					<div className="chart-subtitle">Profanity frequency and aggression markers detected</div>
+					<h2>Professional Liability Signals</h2>
+					<div className="chart-subtitle">Risks detected in OCR text</div>
 
 					<div className="chart-container">
 						<ResponsiveContainer width="100%" height={200}>
-							<BarChart data={weeklyToneData}>
+							<BarChart data={liabilitySignalsData}>
 								<CartesianGrid strokeDasharray="1 2" />
-								<XAxis dataKey="week" />
+								<XAxis dataKey="name" />
 								<YAxis />
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="profanity_hits" stackId="a" fill="#ff7c7c" name="Profanity Hits" />
-								<Bar dataKey="aggression_hits" stackId="a" fill="#ffa500" name="Aggression Hits" />
-								<Bar dataKey="shouting_hits" stackId="a" fill="#ff4444" name="Shouting Hits" />
+								<Bar dataKey="count" fill="#ff7c7c" />
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
 
 					<div className="definition-box">
 						<strong>Definitions:</strong><br />
-						• <strong>Profanity Hits:</strong> Detected curse words using rule-based patterns<br />
-						• <strong>Aggression Hits:</strong> Hostile language or threatening phrases detected<br />
-						• <strong>Shouting Hits:</strong> ALL CAPS text or excessive punctuation
+						• <strong>Aggression Hits:</strong> Count of OCR lines containing aggressive verbs/insults (demo rule-based)<br />
+						• <strong>Profanity Hits:</strong> Count of OCR lines matching a profanity wordlist (demo rule-based)<br />
+						• <strong>Shouting Hits:</strong> Count of OCR lines with ALL CAPS words or excessive exclamation marks (demo rule-based)
 					</div>
-					<div className="chart-note">Highlights risky text if screenshotted/shared; not judging the user</div>
+					<div className="chart-note">Demo-only heuristic. This flags risk if screenshots were shared publicly; it does not judge person.</div>
 				</div>
 
 				{/* Chart 4: Location Leakage Signals */}
@@ -297,10 +290,10 @@ export function AdminDashboard() {
 
 					<div className="chart-container">
 						<ResponsiveContainer width="100%" height={200}>
-							<BarChart data={locationLeakageData} layout="horizontal">
+							<BarChart data={locationLeakageData}>
 								<CartesianGrid strokeDasharray="1 2" />
-								<XAxis type="number" />
-								<YAxis dataKey="category" type="category" width={150} />
+								<XAxis dataKey="name" />
+								<YAxis />
 								<Tooltip />
 								<Legend />
 								<Bar dataKey="count" fill="#22d3ee" />
@@ -308,7 +301,7 @@ export function AdminDashboard() {
 						</ResponsiveContainer>
 					</div>
 
-					<div className="chart-note">Even without GPS/EXIF, screenshots can reveal location through stations, routes, and transit context.</div>
+					<div className="chart-note">Screenshots can reveal location through stations, routes, and transit context—even without GPS/EXIF.</div>
 				</div>
 			</div>
 		</div>
