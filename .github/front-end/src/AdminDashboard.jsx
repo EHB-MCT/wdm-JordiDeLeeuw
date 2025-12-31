@@ -7,6 +7,8 @@ const API_BASE = "";
 
 // OCR Text Privacy Risk Demo Data - will be replaced by real backend data
 const demoData = {
+	totalUsers: 156,
+	totalPhotos: 1247,
 	timestampLeakage: Array.from({ length: 24 }, (_, i) => ({
 		hour: i,
 		count: Math.floor(Math.random() * 50) + 10,
@@ -31,7 +33,7 @@ const demoData = {
 };
 
 export function AdminDashboard() {
-	const { user } = useAuth();
+	const { user, logout } = useAuth();
 	const [stats, setStats] = useState(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
@@ -123,6 +125,23 @@ export function AdminDashboard() {
 	// Use stats if present, otherwise fall back to demoData
 	const dataSource = stats || demoData;
 
+	// Compute totals for header
+	const totals = useMemo(() => {
+		if (useLiveMode && stats && stats.totalUsers !== undefined && stats.totalPhotos !== undefined) {
+			// Live mode with actual data
+			return {
+				totalUsers: stats.totalUsers,
+				totalPhotos: stats.totalPhotos,
+			};
+		} else {
+			// Demo mode or live mode without data
+			return {
+				totalUsers: demoData.totalUsers,
+				totalPhotos: demoData.totalPhotos,
+			};
+		}
+	}, [useLiveMode, stats]);
+
 	const timestampHeatmapData = useMemo(() => {
 		return dataSource?.timestampLeakage || demoData.timestampLeakage;
 	}, [dataSource]);
@@ -184,12 +203,34 @@ export function AdminDashboard() {
 	if (!isVerifiedAdmin) {
 		return (
 			<div className="dashboard">
-				<div className="dashboard-header">
-					<div className="dashboard-header-content">
+				{/* Primary Navigation Bar */}
+				<div className="admin-nav">
+					<div className="admin-nav-left">
 						<h1>Admin Dashboard</h1>
-						<div className="profile-email">{user?.email}</div>
+					</div>
+					<div className="admin-nav-middle">
+						<div className="user-email">{user?.email || "unknown"}</div>
+					</div>
+					<div className="admin-nav-right">
+						<button className="logout-btn" onClick={logout}>
+							Logout
+						</button>
+						<div className="data-mode-toggle">
+							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
+								Demo
+							</button>
+							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend" disabled>
+								Live
+							</button>
+						</div>
 					</div>
 				</div>
+
+				{/* Secondary Summary Bar */}
+				<div className="admin-summary">
+					{totals ? `Users: ${totals.totalUsers} • Photos: ${totals.totalPhotos}` : "Users: — • Photos: —"}
+				</div>
+
 				<div className="chart-note">Access denied.</div>
 			</div>
 		);
@@ -197,11 +238,18 @@ export function AdminDashboard() {
 
 	return (
 		<div className="dashboard">
-			<div className="dashboard-header">
-				<div className="dashboard-header-content">
+			{/* Primary Navigation Bar */}
+			<div className="admin-nav">
+				<div className="admin-nav-left">
 					<h1>Admin Dashboard</h1>
-					<div className="profile-email">{user?.email}</div>
-
+				</div>
+				<div className="admin-nav-middle">
+					<div className="user-email">{user?.email || "unknown"}</div>
+				</div>
+				<div className="admin-nav-right">
+					<button className="logout-btn" onClick={logout}>
+						Logout
+					</button>
 					<div className="data-mode-toggle">
 						<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
 							Demo
@@ -211,6 +259,11 @@ export function AdminDashboard() {
 						</button>
 					</div>
 				</div>
+			</div>
+
+			{/* Secondary Summary Bar */}
+			<div className="admin-summary">
+				{totals ? `Users: ${totals.totalUsers} • Photos: ${totals.totalPhotos}` : "Users: — • Photos: —"}
 			</div>
 
 			<div className="charts-grid">
