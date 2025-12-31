@@ -18,17 +18,16 @@ const demoData = {
 		phonePatterns: 12,
 		nameEntities: 34,
 	},
-	communicationToneRisk: {
-		profanity: 8,
-		aggressionMarkers: 15,
-		neutral: 127,
-	},
-	financialSignalLeakage: {
-		currencySymbols: 12,
-		paymentKeywords: 23,
-		subscriptionKeywords: 8,
-		invoiceKeywords: 5,
-		none: 152,
+	weeklyToneTrends: Array.from({ length: 4 }, (_, i) => ({
+		week: `Week ${i + 1}`,
+		profanity_hits: Math.floor(Math.random() * 15) + 3,
+		aggression_hits: Math.floor(Math.random() * 10) + 2,
+		shouting_hits: Math.floor(Math.random() * 8) + 1,
+	})),
+	locationLeakageSignals: {
+		explicit_location_keywords: 18,
+		travel_route_context: 12,
+		none: 45,
 	},
 };
 
@@ -137,21 +136,15 @@ export function AdminDashboard() {
 		}));
 	}, [dataSource]);
 
-	const communicationToneData = useMemo(() => {
-		const obj = dataSource?.communicationToneRisk || demoData.communicationToneRisk;
-		const total = Object.values(obj).reduce((sum, val) => sum + val, 0);
-		return Object.entries(obj).map(([key, count]) => ({
-			name: key.replace(/([A-Z])/g, " ").replace(/^./, (c) => c.toUpperCase()),
-			value: count,
-			percentage: Math.round((count / total) * 100),
-		}));
+	const weeklyToneData = useMemo(() => {
+		return dataSource?.weeklyToneTrends || demoData.weeklyToneTrends;
 	}, [dataSource]);
 
-	const financialSignalData = useMemo(() => {
-		const obj = dataSource?.financialSignalLeakage || demoData.financialSignalLeakage;
+	const locationLeakageData = useMemo(() => {
+		const obj = dataSource?.locationLeakageSignals || demoData.locationLeakageSignals;
 		return Object.entries(obj).map(([key, count]) => ({
-			name: key.replace(/([A-Z])/g, " ").replace(/^./, (c) => c.toUpperCase()),
-			value: count,
+			category: key.replace(/([A-Z])/g, " ").replace(/^./, (c) => c.toUpperCase()),
+			count,
 		}));
 	}, [dataSource]);
 
@@ -274,56 +267,48 @@ export function AdminDashboard() {
 					<div className="chart-subtitle">Profanity frequency and aggression markers detected</div>
 
 					<div className="chart-container">
-						<ResponsiveContainer width="100%" height={250}>
-							<PieChart>
-								<Pie
-									data={communicationToneData}
-									cx="50%"
-									cy="50%"
-									innerRadius={60}
-									outerRadius={80}
-									paddingAngle={5}
-									dataKey="value"
-								>
-									{communicationToneData.map((entry, index) => (
-										<Cell key={`cell-${index}`} fill={['#ff7c7c', '#ffa500', '#82ca9d'][index]} />
-									))}
-								</Pie>
+						<ResponsiveContainer width="100%" height={200}>
+							<BarChart data={weeklyToneData}>
+								<CartesianGrid strokeDasharray="1 2" />
+								<XAxis dataKey="week" />
+								<YAxis />
 								<Tooltip />
 								<Legend />
-							</PieChart>
+								<Bar dataKey="profanity_hits" stackId="a" fill="#ff7c7c" name="Profanity Hits" />
+								<Bar dataKey="aggression_hits" stackId="a" fill="#ffa500" name="Aggression Hits" />
+								<Bar dataKey="shouting_hits" stackId="a" fill="#ff4444" name="Shouting Hits" />
+							</BarChart>
 						</ResponsiveContainer>
 					</div>
 
-					<div className="chart-note">Risk indicators only - no moral judgments implied</div>
+					<div className="definition-box">
+						<strong>Definitions:</strong><br />
+						• <strong>Profanity Hits:</strong> Detected curse words using rule-based patterns<br />
+						• <strong>Aggression Hits:</strong> Hostile language or threatening phrases detected<br />
+						• <strong>Shouting Hits:</strong> ALL CAPS text or excessive punctuation
+					</div>
+					<div className="chart-note">Highlights risky text if screenshotted/shared; not judging the user</div>
 				</div>
 
-				{/* Chart 4: Financial Signal Leakage */}
+				{/* Chart 4: Location Leakage Signals */}
 				<div className="chart-card">
-					<h2>Financial Signal Leakage — keywords/patterns detected</h2>
-					<div className="chart-subtitle">Financial-related content found in OCR text</div>
+					<h2>Location Leakage Signals in OCR Text</h2>
+					<div className="chart-subtitle">Location information detected in OCR content</div>
 
 					<div className="chart-container">
-						<ResponsiveContainer width="100%" height={250}>
-							<PieChart>
-								<Pie
-									data={financialSignalData}
-									cx="50%"
-									cy="50%"
-									outerRadius={80}
-									dataKey="value"
-								>
-									{financialSignalData.map((entry, index) => (
-										<Cell key={`cell-${index}`} fill={['#0088fe', '#00c49f', '#ffbb28', '#ff8042', '#d0d0d0'][index]} />
-									))}
-								</Pie>
+						<ResponsiveContainer width="100%" height={200}>
+							<BarChart data={locationLeakageData} layout="horizontal">
+								<CartesianGrid strokeDasharray="1 2" />
+								<XAxis type="number" />
+								<YAxis dataKey="category" type="category" width={150} />
 								<Tooltip />
 								<Legend />
-							</PieChart>
+								<Bar dataKey="count" fill="#22d3ee" />
+							</BarChart>
 						</ResponsiveContainer>
 					</div>
 
-					<div className="chart-note">Financial keywords and patterns detected in OCR content</div>
+					<div className="chart-note">Even without GPS/EXIF, screenshots can reveal location through stations, routes, and transit context.</div>
 				</div>
 			</div>
 		</div>

@@ -955,6 +955,22 @@
 	color: #ccc;
 }
 
+/* Definition Box */
+.definition-box {
+	background: #2a2a2a;
+	border: 1px solid #444;
+	border-radius: 6px;
+	padding: 0.75rem;
+	margin: 0.75rem 0;
+	font-size: 0.8rem;
+	color: #ccc;
+	line-height: 1.4;
+}
+
+.definition-box strong {
+	color: #fff;
+}
+
 /* Chart Note */
 .chart-note {
 	text-align: center;
