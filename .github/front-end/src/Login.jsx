@@ -44,8 +44,16 @@ export function Login() {
 
 			if (res.ok) {
 				setResponse({ success: true, data });
-				login({ email: data.email, userId: data.userId, isAdmin: data.isAdmin });
-				setTimeout(() => navigate("/dashboard"), 500);
+				// Store admin status and redirect appropriately
+				login({ 
+					email: data.email, 
+					userId: data.userId, 
+					isAdmin: data.isAdmin || false 
+				});
+				
+				// Redirect admin to admin dashboard, users to regular dashboard
+				const redirectPath = data.isAdmin ? "/admin" : "/dashboard";
+				setTimeout(() => navigate(redirectPath), 500);
 			} else {
 				setResponse({ success: false, data });
 			}

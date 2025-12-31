@@ -1,15 +1,9 @@
 from flask import Blueprint, request, jsonify
 from auth_backend import get_user_by_email, create_user, verify_password, get_user_by_id
+from bson import ObjectId
 
 #maakt een blueprint aan voor auth-routes
 auth_bp = Blueprint("auth", __name__)
-
-def check_auth(request):
-    """Extract user ID from X-User-Id header"""
-    user_id = request.headers.get("X-User-Id")
-    if not user_id:
-        return None
-    return user_id
 
 #register route
 @auth_bp.route("/api/register", methods=["POST"])
@@ -35,9 +29,6 @@ def register():
             return jsonify({"error": "email bestaat al"}), 400
 
         user_id = create_user(email, password, is_admin)
-
-        # Debug logging to track registration
-        print(f"DEBUG: Registration attempt - email: {email}, admin: {is_admin}, user_id: {user_id}")
 
         return jsonify({
             "message": "registratie gelukt",
@@ -101,6 +92,7 @@ def get_current_user():
         
         user = get_user_by_id(user_id)
         if user:
+            print(f"get_current_user: Found user {user_id}, isAdmin: {user.get('isAdmin', False)} (type: {type(user.get('isAdmin', False))})")
             return jsonify({
                 "userId": str(user["_id"]),
                 "email": user.get("email"),
@@ -117,3 +109,10 @@ def get_current_user():
             "error": "Failed to get user info",
             "details": str(e)
         }), 500
+
+def check_auth(request):
+    """Extract user ID from X-User-Id header"""
+    user_id = request.headers.get("X-User-Id")
+    if not user_id:
+        return None
+    return user_id

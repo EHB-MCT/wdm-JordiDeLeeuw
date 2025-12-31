@@ -5,7 +5,6 @@ import { AdminRoute } from "./AdminRoute";
 import { Login } from "./Login";
 import { Dashboard } from "./Dashboard";
 import { AdminDashboard } from "./AdminDashboard";
-import { AccessDenied } from "./AccessDenied";
 import "./App.css";
 
 function AppRoutes() {
@@ -13,7 +12,7 @@ function AppRoutes() {
 
 	return (
 		<Routes>
-			<Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+			<Route path="/" element={user ? <Navigate to={user?.isAdmin ? "/admin" : "/dashboard"} replace /> : <Login />} />
 			<Route
 				path="/dashboard"
 				element={
@@ -30,7 +29,6 @@ function AppRoutes() {
 					</AdminRoute>
 				}
 			/>
-			<Route path="/access-denied" element={<AccessDenied />} />
 		</Routes>
 	);
 }

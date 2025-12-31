@@ -1,274 +1,360 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "./AuthContext";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, RadialBarChart, RadialBar } from "recharts";
 import "./Dashboard.css";
 
 const API_BASE = "";
 
+// OCR Text Privacy Risk Demo Data - will be replaced by real backend data
+const demoData = {
+	totalUsers: 156,
+	totalPhotos: 1247,
+	timestampLeakage: Array.from({ length: 24 }, (_, i) => ({
+		hour: i,
+		count: Math.floor(Math.random() * 50) + 10,
+	})),
+	socialContextLeakage: {
+		relationshipLabels: 23,
+		handles: 45,
+		emails: 18,
+		phonePatterns: 12,
+		nameEntities: 34,
+	},
+	professionalLiabilitySignals: [
+		{ name: "Aggression Hits", count: 14 },
+		{ name: "Profanity Hits", count: 9 },
+		{ name: "Shouting Hits", count: 22 },
+	],
+	locationLeakageSignals: [
+		{ name: "Explicit location keywords", count: 18 },
+		{ name: "Travel/route context", count: 27 },
+		{ name: "No location signals", count: 5 },
+	],
+};
+
 export function AdminDashboard() {
-	const { user } = useAuth();
-	const navigate = useNavigate();
-	const [stats, setStats] = useState({
-		totalUsers: 0,
-		totalPhotos: 0,
-		ocrCompleted: 0,
-		analysesCompleted: 0
-	});
+	const { user, logout } = useAuth();
+	const [stats, setStats] = useState(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
+	const [isVerifiedAdmin, setIsVerifiedAdmin] = useState(false);
+	const [useLiveMode, setUseLiveMode] = useState(false);
 
-	const [adminVerified, setAdminVerified] = useState(false);
-
-	// First verify admin status, then fetch stats if admin
 	useEffect(() => {
-		const verifyAdminAndFetchStats = async () => {
-			try {
-				setLoading(true);
-				setError(null);
+		if (user) {
+			verifyAdminAndFetchStats();
+		} else {
+			setLoading(false);
+			setIsVerifiedAdmin(false);
+			setStats(null);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [user, useLiveMode]);
 
-				// Step 1: Verify admin status via /api/me
-				const meRes = await fetch(`${API_BASE}/api/me`, {
-					headers: {
-						"X-User-Id": user.userId,
-					},
-				});
+	const verifyAdminAndFetchStats = async () => {
+		setLoading(true);
+		setError(null);
 
-				if (!meRes.ok) {
-					setError("Failed to verify admin status.");
-					setLoading(false);
-					setAdminVerified(false);
-					return;
+		if (!useLiveMode) {
+			// Demo mode
+			setIsVerifiedAdmin(true);
+			setStats(demoData);
+			setLoading(false);
+			return;
+		}
+
+		// Live mode
+		try {
+			const meRes = await fetch(`${API_BASE}/api/me`, {
+				headers: { "X-User-Id": user.userId },
+			});
+
+			if (!meRes.ok) {
+				let msg = "Admin verification failed";
+				try {
+					const data = await meRes.json();
+					msg = data?.error ? `Admin verification failed: ${data.error}` : msg;
+				} catch {
+					// JSON parsing failed, use default message
 				}
-
-				const meData = await meRes.json();
-				
-				// Step 2: Check if user is actually admin
-				if (!meData.isAdmin) {
-					setError("Access denied. Admin privileges required.");
-					setLoading(false);
-					setAdminVerified(false);
-					return;
-				}
-
-				setAdminVerified(true);
-
-				// Step 3: Fetch admin stats
-				const statsRes = await fetch(`${API_BASE}/api/admin/stats`, {
-					headers: {
-						"X-User-Id": user.userId,
-					},
-				});
-
-				if (statsRes.ok) {
-					const statsData = await statsRes.json();
-					setStats(statsData);
-				} else if (statsRes.status === 403) {
-					setError("Access denied. Admin privileges required.");
-				} else {
-					setError("Failed to load admin statistics.");
-				}
-			} catch (err) {
-				console.error("Failed to verify admin or fetch stats:", err);
-				setError("Network error loading statistics.");
-			} finally {
-				setLoading(false);
+				setError(msg);
+				setIsVerifiedAdmin(false);
+				setStats(null);
+				return;
 			}
-		};
 
-		verifyAdminAndFetchStats();
-	}, [user.userId]);
+			const meData = await meRes.json();
+			if (meData?.isAdmin !== true) {
+				setError("Access denied: admin privileges required");
+				setIsVerifiedAdmin(false);
+				setStats(null);
+				return;
+			}
 
-	// Show loading during admin verification or stats fetching
+			setIsVerifiedAdmin(true);
+
+			const statsRes = await fetch(`${API_BASE}/api/admin/stats`, {
+				headers: { "X-User-Id": user.userId },
+			});
+
+			if (!statsRes.ok) {
+				let msg = "Failed to fetch admin statistics";
+				try {
+					const data = await statsRes.json();
+					msg = data?.error || msg;
+				} catch {
+					// JSON parsing failed, use default message
+				}
+				setError(msg);
+				setStats(null);
+				return;
+			}
+
+			const statsData = await statsRes.json();
+			setStats(statsData);
+			setError(null);
+		} catch {
+			setError("Network error - could not reach server");
+			setIsVerifiedAdmin(false);
+			setStats(null);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	// Use stats if present, otherwise fall back to demoData
+	const dataSource = stats || demoData;
+
+	// Compute totals for header
+	const totals = useMemo(() => {
+		if (useLiveMode && stats && stats.totalUsers !== undefined && stats.totalPhotos !== undefined) {
+			// Live mode with actual data
+			return {
+				totalUsers: stats.totalUsers,
+				totalPhotos: stats.totalPhotos,
+			};
+		} else {
+			// Demo mode or live mode without data
+			return {
+				totalUsers: demoData.totalUsers,
+				totalPhotos: demoData.totalPhotos,
+			};
+		}
+	}, [useLiveMode, stats]);
+
+	const timestampHeatmapData = useMemo(() => {
+		return dataSource?.timestampLeakage || demoData.timestampLeakage;
+	}, [dataSource]);
+
+	const socialContextData = useMemo(() => {
+		const obj = dataSource?.socialContextLeakage || demoData.socialContextLeakage;
+		return Object.entries(obj).map(([key, count]) => ({
+			category: key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()),
+			count,
+		}));
+	}, [dataSource]);
+
+	const liabilitySignalsData = useMemo(() => {
+		return dataSource?.professionalLiabilitySignals || demoData.professionalLiabilitySignals;
+	}, [dataSource]);
+
+	const locationLeakageData = useMemo(() => {
+		return dataSource?.locationLeakageSignals || demoData.locationLeakageSignals;
+	}, [dataSource]);
+
 	if (loading) {
 		return (
 			<div className="dashboard">
-				<div className="upload-card" style={{ textAlign: 'center', padding: '2rem' }}>
-					<div style={{ fontSize: '1.2rem', marginBottom: '1rem' }}>
-						{adminVerified ? "Loading Admin Statistics..." : "Verifying admin status..."}
-					</div>
-					<div style={{ color: '#646cff' }}>
-						{adminVerified ? "📊 Fetching stats data..." : "🔐 Checking admin privileges..."}
+				<div className="dashboard-header">
+					<div className="dashboard-header-content">
+						<h1>Admin Dashboard</h1>
+						<div className="profile-email">{user?.email}</div>
 					</div>
 				</div>
+				<div className="chart-note">Loading…</div>
 			</div>
 		);
 	}
 
-	// Show error (includes access denied)
 	if (error) {
 		return (
 			<div className="dashboard">
-				<div className="upload-card" style={{ textAlign: 'center', padding: '2rem' }}>
-					<div style={{ fontSize: '1.2rem', color: '#f44336', marginBottom: '1rem' }}>
-						Error Loading Statistics
+				<div className="dashboard-header">
+					<div className="dashboard-header-content">
+						<h1>Admin Dashboard</h1>
+						<div className="profile-email">{user?.email}</div>
+
+						<div className="data-mode-toggle">
+							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
+								Demo
+							</button>
+							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend" disabled>
+								Live
+							</button>
+						</div>
 					</div>
-					<div style={{ color: '#ccc', marginBottom: '1.5rem' }}>
-						{error}
-					</div>
-					<button 
-						className="next-btn" 
-						onClick={() => window.location.reload()}
-						style={{ maxWidth: '300px' }}
-					>
-						Try Again
-					</button>
 				</div>
+
+				<div className="chart-note">{error}</div>
 			</div>
 		);
 	}
 
-	// Show access denied specifically (before showing error state)
-	if (!adminVerified && !loading && !error) {
+	if (!isVerifiedAdmin) {
 		return (
 			<div className="dashboard">
-				<div className="upload-card" style={{ textAlign: 'center', padding: '2rem' }}>
-					<div style={{ fontSize: '1.2rem', color: '#f44336', marginBottom: '1rem' }}>
-						Access denied (admin only)
+				{/* Primary Navigation Bar */}
+				<div className="admin-nav">
+					<div className="admin-nav-left">
+						<h1>Admin Dashboard</h1>
 					</div>
-					<div style={{ color: '#ccc', marginBottom: '1.5rem' }}>
-						You need administrator privileges to access this page.
+					<div className="admin-nav-middle">
+						<div className="user-email">{user?.email || "unknown"}</div>
 					</div>
-					<button 
-						className="next-btn" 
-						onClick={() => navigate("/dashboard")}
-						style={{ maxWidth: '300px' }}
-					>
-						Back to User Dashboard
-					</button>
+					<div className="admin-nav-right">
+						<button className="logout-btn" onClick={logout}>
+							Logout
+						</button>
+						<div className="data-mode-toggle">
+							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
+								Demo
+							</button>
+							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend" disabled>
+								Live
+							</button>
+						</div>
+					</div>
 				</div>
+
+				{/* Secondary Summary Bar */}
+				<div className="admin-summary">
+					{totals ? `Users: ${totals.totalUsers} • Photos: ${totals.totalPhotos}` : "Users: — • Photos: —"}
+				</div>
+
+				<div className="chart-note">Access denied.</div>
 			</div>
 		);
 	}
 
 	return (
 		<div className="dashboard">
-			<div className="dashboard-header">
-				<h1>Admin Dashboard</h1>
-				<div className="profile-menu">
-					<button className="profile-icon" onClick={() => navigate("/dashboard")}>
-						👤
+			{/* Primary Navigation Bar */}
+			<div className="admin-nav">
+				<div className="admin-nav-left">
+					<h1>Admin Dashboard</h1>
+				</div>
+				<div className="admin-nav-middle">
+					<div className="user-email">{user?.email || "unknown"}</div>
+				</div>
+				<div className="admin-nav-right">
+					<button className="logout-btn" onClick={logout}>
+						Logout
 					</button>
+					<div className="data-mode-toggle">
+						<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
+							Demo
+						</button>
+						<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend" disabled>
+							Live
+						</button>
+					</div>
 				</div>
 			</div>
 
-			<div className="upload-card">
-				<h2>Welcome to Admin Dashboard</h2>
-				
-				<div style={{ 
-					display: 'grid', 
-					gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-					gap: '1.5rem',
-					marginTop: '2rem'
-				}}>
-					{/* Total Users Card */}
-					<div style={{ 
-						background: '#1a1a1a', 
-						border: '1px solid #444', 
-						borderRadius: '8px', 
-						padding: '1.5rem',
-						textAlign: 'center'
-					}}>
-						<div style={{ 
-							fontSize: '2rem', 
-							fontWeight: 'bold', 
-							color: '#646cff',
-							marginBottom: '0.5rem'
-						}}>
-							{stats.totalUsers.toLocaleString()}
-						</div>
-						<div style={{ 
-							fontSize: '0.9rem', 
-							color: '#ccc' 
-						}}>
-							Total Users
-						</div>
+			{/* Secondary Summary Bar */}
+			<div className="admin-summary">
+				{totals ? `Users: ${totals.totalUsers} • Photos: ${totals.totalPhotos}` : "Users: — • Photos: —"}
+			</div>
+
+			<div className="charts-grid">
+				{/* Chart 1: Timestamp Leakage Heatmap */}
+				<div className="chart-card">
+					<h2>Timestamp Leakage Heatmap (00–23h)</h2>
+					<div className="chart-subtitle">How often system-clock timestamps appear in OCR text</div>
+
+					<div className="chart-container">
+						<ResponsiveContainer width="100%" height={300}>
+							<BarChart data={timestampHeatmapData}>
+								<CartesianGrid strokeDasharray="1 2" />
+								<XAxis dataKey="hour" />
+								<YAxis />
+								<Tooltip />
+								<Legend />
+								<Bar dataKey="count" fill="#8884d8" />
+							</BarChart>
+						</ResponsiveContainer>
 					</div>
 
-					{/* Total Photos Card */}
-					<div style={{ 
-						background: '#1a1a1a', 
-						border: '1px solid #444', 
-						borderRadius: '8px', 
-						padding: '1.5rem',
-						textAlign: 'center'
-					}}>
-						<div style={{ 
-							fontSize: '2rem', 
-							fontWeight: 'bold', 
-							color: '#ff6b6b',
-							marginBottom: '0.5rem'
-						}}>
-							{stats.totalPhotos.toLocaleString()}
-						</div>
-						<div style={{ 
-							fontSize: '0.9rem', 
-							color: '#ccc' 
-						}}>
-							Total Photos
-						</div>
-					</div>
-
-					{/* OCR Completed Card */}
-					<div style={{ 
-						background: '#1a1a1a', 
-						border: '1px solid #444', 
-						borderRadius: '8px', 
-						padding: '1.5rem',
-						textAlign: 'center'
-					}}>
-						<div style={{ 
-							fontSize: '2rem', 
-							fontWeight: 'bold', 
-							color: '#4ade80',
-							marginBottom: '0.5rem'
-						}}>
-							{stats.ocrCompleted.toLocaleString()}
-						</div>
-						<div style={{ 
-							fontSize: '0.9rem', 
-							color: '#ccc' 
-						}}>
-							OCR Completed
-						</div>
-					</div>
-
-					{/* Analyses Card */}
-					<div style={{ 
-						background: '#1a1a1a', 
-						border: '1px solid #444', 
-						borderRadius: '8px', 
-						padding: '1.5rem',
-						textAlign: 'center'
-					}}>
-						<div style={{ 
-							fontSize: '2rem', 
-							fontWeight: 'bold', 
-							color: '#ffa500',
-							marginBottom: '0.5rem'
-						}}>
-							{stats.analysesCompleted.toLocaleString()}
-						</div>
-						<div style={{ 
-							fontSize: '0.9rem', 
-							color: '#ccc' 
-						}}>
-							Analyses
-						</div>
-					</div>
+					<div className="chart-note">Demo data — shows timestamp leakage frequency per hour</div>
 				</div>
 
-				{/* Back to User Dashboard Button */}
-				<div style={{ marginTop: '2rem', textAlign: 'center' }}>
-					<button 
-						className="next-btn" 
-						onClick={() => navigate("/dashboard")}
-						style={{ 
-							maxWidth: '300px',
-							background: '#646cff'
-						}}
-					>
-						Back to User Dashboard
-					</button>
+				{/* Chart 2: Social Context Leakage */}
+				<div className="chart-card">
+					<h2>Social Context Leakage — identifiers detected</h2>
+					<div className="chart-subtitle">Personal identifiers found in OCR text</div>
+
+					<div className="chart-container">
+						<ResponsiveContainer width="100%" height={250}>
+							<BarChart data={socialContextData}>
+								<CartesianGrid strokeDasharray="1 2" />
+								<XAxis dataKey="category" />
+								<YAxis />
+								<Tooltip />
+								<Legend />
+								<Bar dataKey="count" fill="#82ca9d" />
+							</BarChart>
+						</ResponsiveContainer>
+					</div>
+
+					<div className="chart-note">Higher counts indicate more social context exposure</div>
+				</div>
+
+				{/* Chart 3: Professional Liability Signals */}
+				<div className="chart-card">
+					<h2>Professional Liability Signals</h2>
+					<div className="chart-subtitle">Risks detected in OCR text</div>
+
+					<div className="chart-container">
+						<ResponsiveContainer width="100%" height={200}>
+							<BarChart data={liabilitySignalsData}>
+								<CartesianGrid strokeDasharray="1 2" />
+								<XAxis dataKey="name" />
+								<YAxis />
+								<Tooltip />
+								<Legend />
+								<Bar dataKey="count" fill="#ff7c7c" />
+							</BarChart>
+						</ResponsiveContainer>
+					</div>
+
+					<div className="definition-box">
+						<strong>Definitions:</strong><br />
+						• <strong>Aggression Hits:</strong> Count of OCR lines containing aggressive verbs/insults (demo rule-based)<br />
+						• <strong>Profanity Hits:</strong> Count of OCR lines matching a profanity wordlist (demo rule-based)<br />
+						• <strong>Shouting Hits:</strong> Count of OCR lines with ALL CAPS words or excessive exclamation marks (demo rule-based)
+					</div>
+					<div className="chart-note">Demo-only heuristic. This flags risk if screenshots were shared publicly; it does not judge person.</div>
+				</div>
+
+				{/* Chart 4: Location Leakage Signals */}
+				<div className="chart-card">
+					<h2>Location Leakage Signals in OCR Text</h2>
+					<div className="chart-subtitle">Location information detected in OCR content</div>
+
+					<div className="chart-container">
+						<ResponsiveContainer width="100%" height={200}>
+							<BarChart data={locationLeakageData}>
+								<CartesianGrid strokeDasharray="1 2" />
+								<XAxis dataKey="name" />
+								<YAxis />
+								<Tooltip />
+								<Legend />
+								<Bar dataKey="count" fill="#22d3ee" />
+							</BarChart>
+						</ResponsiveContainer>
+					</div>
+
+					<div className="chart-note">Screenshots can reveal location through stations, routes, and transit context—even without GPS/EXIF.</div>
 				</div>
 			</div>
 		</div>
