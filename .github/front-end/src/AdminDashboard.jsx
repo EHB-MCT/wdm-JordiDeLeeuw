@@ -1,53 +1,34 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "./AuthContext";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, RadialBarChart, RadialBar } from "recharts";
 import "./Dashboard.css";
 
 const API_BASE = "";
 
-// Demo data - will be replaced by real backend data
+// OCR Text Privacy Risk Demo Data - will be replaced by real backend data
 const demoData = {
-	sensitiveDataTypes: {
-		fullNames: 45,
-		locations: 23,
-		datesTimes: 67,
-		financial: 12,
-		documents: 8,
-		contactInfo: 34,
+	timestampLeakage: Array.from({ length: 24 }, (_, i) => ({
+		hour: i,
+		count: Math.floor(Math.random() * 50) + 10,
+	})),
+	socialContextLeakage: {
+		relationshipLabels: 23,
+		handles: 45,
+		emails: 18,
+		phonePatterns: 12,
+		nameEntities: 34,
 	},
-	riskLevels: {
-		score0: 28,
-		score1: 19,
-		score2: 24,
-		score3: 18,
-		score4: 8,
-		score5: 3,
+	communicationToneRisk: {
+		profanity: 8,
+		aggressionMarkers: 15,
+		neutral: 127,
 	},
-	exposureSources: {
-		technical: {
-			exifPresent: 34,
-			gpsPresent: 12,
-			cameraModels: 8,
-		},
-		content: {
-			ocrPersonal: 45,
-			llmEntities: 23,
-			detectedPatterns: 19,
-		},
-	},
-	weeklyTrends: {
-		uploads: Array.from({ length: 7 }, (_, i) => ({
-			day: i + 1,
-			count: Math.floor(Math.random() * 15) + 5,
-		})),
-		ocrProcessed: Array.from({ length: 7 }, (_, i) => ({
-			day: i + 1,
-			count: Math.floor(Math.random() * 20) + 10,
-		})),
-		analysesCompleted: Array.from({ length: 7 }, (_, i) => ({
-			day: i + 1,
-			count: Math.floor(Math.random() * 12) + 3,
-		})),
+	financialSignalLeakage: {
+		currencySymbols: 12,
+		paymentKeywords: 23,
+		subscriptionKeywords: 8,
+		invoiceKeywords: 5,
+		none: 152,
 	},
 };
 
@@ -93,7 +74,9 @@ export function AdminDashboard() {
 				try {
 					const data = await meRes.json();
 					msg = data?.error ? `Admin verification failed: ${data.error}` : msg;
-				} catch {}
+				} catch {
+					// JSON parsing failed, use default message
+				}
 				setError(msg);
 				setIsVerifiedAdmin(false);
 				setStats(null);
@@ -119,7 +102,9 @@ export function AdminDashboard() {
 				try {
 					const data = await statsRes.json();
 					msg = data?.error || msg;
-				} catch {}
+				} catch {
+					// JSON parsing failed, use default message
+				}
 				setError(msg);
 				setStats(null);
 				return;
@@ -128,7 +113,7 @@ export function AdminDashboard() {
 			const statsData = await statsRes.json();
 			setStats(statsData);
 			setError(null);
-		} catch (e) {
+		} catch {
 			setError("Network error - could not reach server");
 			setIsVerifiedAdmin(false);
 			setStats(null);
@@ -140,50 +125,33 @@ export function AdminDashboard() {
 	// Use stats if present, otherwise fall back to demoData
 	const dataSource = stats || demoData;
 
-	const sensitiveChartData = useMemo(() => {
-		const obj = dataSource?.sensitiveDataTypes || demoData.sensitiveDataTypes;
+	const timestampHeatmapData = useMemo(() => {
+		return dataSource?.timestampLeakage || demoData.timestampLeakage;
+	}, [dataSource]);
+
+	const socialContextData = useMemo(() => {
+		const obj = dataSource?.socialContextLeakage || demoData.socialContextLeakage;
 		return Object.entries(obj).map(([key, count]) => ({
-			type: key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()),
+			category: key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()),
 			count,
 		}));
 	}, [dataSource]);
 
-	const riskChartData = useMemo(() => {
-		const obj = dataSource?.riskLevels || demoData.riskLevels;
-		return Object.entries(obj)
-			.map(([key, count]) => ({
-				score: key.replace("score", ""),
-				count,
-			}))
-			.sort((a, b) => Number(a.score) - Number(b.score));
+	const communicationToneData = useMemo(() => {
+		const obj = dataSource?.communicationToneRisk || demoData.communicationToneRisk;
+		const total = Object.values(obj).reduce((sum, val) => sum + val, 0);
+		return Object.entries(obj).map(([key, count]) => ({
+			name: key.replace(/([A-Z])/g, " ").replace(/^./, (c) => c.toUpperCase()),
+			value: count,
+			percentage: Math.round((count / total) * 100),
+		}));
 	}, [dataSource]);
 
-	const exposureChartData = useMemo(() => {
-		const tech = dataSource?.exposureSources?.technical || demoData.exposureSources.technical;
-		const content = dataSource?.exposureSources?.content || demoData.exposureSources.content;
-
-		return [
-			{ name: "EXIF Present", value: tech.exifPresent },
-			{ name: "GPS Present", value: tech.gpsPresent },
-			{ name: "Camera Models", value: tech.cameraModels },
-			{ name: "OCR Personal", value: content.ocrPersonal },
-			{ name: "LLM Entities", value: content.llmEntities },
-			{ name: "Detected Patterns", value: content.detectedPatterns },
-		];
-	}, [dataSource]);
-
-	const trendsChartData = useMemo(() => {
-		const uploads = dataSource?.weeklyTrends?.uploads || demoData.weeklyTrends.uploads;
-		const ocr = dataSource?.weeklyTrends?.ocrProcessed || demoData.weeklyTrends.ocrProcessed;
-		const analyses = dataSource?.weeklyTrends?.analysesCompleted || demoData.weeklyTrends.analysesCompleted;
-
-		// Combine by index/day safely
-		const len = Math.min(uploads.length, ocr.length, analyses.length);
-		return Array.from({ length: len }, (_, i) => ({
-			day: uploads[i]?.day ?? i + 1,
-			uploads: uploads[i]?.count ?? 0,
-			ocrProcessed: ocr[i]?.count ?? 0,
-			analysesCompleted: analyses[i]?.count ?? 0,
+	const financialSignalData = useMemo(() => {
+		const obj = dataSource?.financialSignalLeakage || demoData.financialSignalLeakage;
+		return Object.entries(obj).map(([key, count]) => ({
+			name: key.replace(/([A-Z])/g, " ").replace(/^./, (c) => c.toUpperCase()),
+			value: count,
 		}));
 	}, [dataSource]);
 
@@ -258,90 +226,104 @@ export function AdminDashboard() {
 			</div>
 
 			<div className="charts-grid">
-				{/* Chart 1 */}
+				{/* Chart 1: Timestamp Leakage Heatmap */}
 				<div className="chart-card">
-					<h2>Types of Sensitive Data Detected</h2>
-					<div className="chart-subtitle">User uploads containing personal information</div>
+					<h2>Timestamp Leakage Heatmap (00–23h)</h2>
+					<div className="chart-subtitle">How often system-clock timestamps appear in OCR text</div>
 
 					<div className="chart-container">
 						<ResponsiveContainer width="100%" height={300}>
-							<BarChart data={sensitiveChartData}>
+							<BarChart data={timestampHeatmapData}>
 								<CartesianGrid strokeDasharray="1 2" />
-								<XAxis dataKey="type" />
+								<XAxis dataKey="hour" />
 								<YAxis />
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="count" />
+								<Bar dataKey="count" fill="#8884d8" />
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
 
-					<div className="chart-note">Demo data — will be replaced by live admin statistics</div>
+					<div className="chart-note">Demo data — shows timestamp leakage frequency per hour</div>
 				</div>
 
-				{/* Chart 2 */}
+				{/* Chart 2: Social Context Leakage */}
 				<div className="chart-card">
-					<h2>User Exposure Risk Distribution</h2>
-					<div className="chart-subtitle">Privacy risk scoring based on detected content</div>
+					<h2>Social Context Leakage — identifiers detected</h2>
+					<div className="chart-subtitle">Personal identifiers found in OCR text</div>
 
 					<div className="chart-container">
 						<ResponsiveContainer width="100%" height={250}>
-							<BarChart data={riskChartData}>
+							<BarChart data={socialContextData}>
 								<CartesianGrid strokeDasharray="1 2" />
-								<XAxis dataKey="score" />
+								<XAxis dataKey="category" />
 								<YAxis />
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="count" />
+								<Bar dataKey="count" fill="#82ca9d" />
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
 
-					<div className="chart-note">Lower scores = lower privacy risk</div>
+					<div className="chart-note">Higher counts indicate more social context exposure</div>
 				</div>
 
-				{/* Chart 3 */}
+				{/* Chart 3: Communication Tone Risk Indicators */}
 				<div className="chart-card">
-					<h2>Unintended Context Leakage</h2>
-					<div className="chart-subtitle">Data exposure across different contexts</div>
+					<h2>Communication Tone Risk Indicators (OCR text)</h2>
+					<div className="chart-subtitle">Profanity frequency and aggression markers detected</div>
 
 					<div className="chart-container">
 						<ResponsiveContainer width="100%" height={250}>
-							<BarChart data={exposureChartData}>
-								<CartesianGrid strokeDasharray="1 2" />
-								<XAxis dataKey="name" />
-								<YAxis />
+							<PieChart>
+								<Pie
+									data={communicationToneData}
+									cx="50%"
+									cy="50%"
+									innerRadius={60}
+									outerRadius={80}
+									paddingAngle={5}
+									dataKey="value"
+								>
+									{communicationToneData.map((entry, index) => (
+										<Cell key={`cell-${index}`} fill={['#ff7c7c', '#ffa500', '#82ca9d'][index]} />
+									))}
+								</Pie>
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="value" />
-							</BarChart>
+							</PieChart>
 						</ResponsiveContainer>
 					</div>
 
-					<div className="chart-note">Higher values indicate more potential exposure</div>
+					<div className="chart-note">Risk indicators only - no moral judgments implied</div>
 				</div>
 
-				{/* Chart 4 */}
-				<div className="chart-card full-width">
-					<h2>Weekly Activity Trends</h2>
-					<div className="chart-subtitle">Upload and processing activity over the last 7 days</div>
+				{/* Chart 4: Financial Signal Leakage */}
+				<div className="chart-card">
+					<h2>Financial Signal Leakage — keywords/patterns detected</h2>
+					<div className="chart-subtitle">Financial-related content found in OCR text</div>
 
 					<div className="chart-container">
-						<ResponsiveContainer width="100%" height={220}>
-							<LineChart data={trendsChartData}>
-								<CartesianGrid strokeDasharray="1 2" />
-								<XAxis dataKey="day" />
-								<YAxis />
+						<ResponsiveContainer width="100%" height={250}>
+							<PieChart>
+								<Pie
+									data={financialSignalData}
+									cx="50%"
+									cy="50%"
+									outerRadius={80}
+									dataKey="value"
+								>
+									{financialSignalData.map((entry, index) => (
+										<Cell key={`cell-${index}`} fill={['#0088fe', '#00c49f', '#ffbb28', '#ff8042', '#d0d0d0'][index]} />
+									))}
+								</Pie>
 								<Tooltip />
 								<Legend />
-								<Line type="monotone" dataKey="uploads" dot={false} />
-								<Line type="monotone" dataKey="ocrProcessed" dot={false} />
-								<Line type="monotone" dataKey="analysesCompleted" dot={false} />
-							</LineChart>
+							</PieChart>
 						</ResponsiveContainer>
 					</div>
 
-					<div className="chart-note">Demo data — will be replaced by live admin statistics</div>
+					<div className="chart-note">Financial keywords and patterns detected in OCR content</div>
 				</div>
 			</div>
 		</div>
