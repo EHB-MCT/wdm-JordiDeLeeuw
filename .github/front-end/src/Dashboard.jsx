@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import "./Dashboard.css";
+// OBOE_EDIT_TEST: connectivity check
 
 const API_BASE = "";
 
@@ -18,20 +19,20 @@ export function Dashboard() {
 	const [files, setFiles] = useState([]);
 	const [uploading, setUploading] = useState(false);
 	const [response, setResponse] = useState(null);
-	const [showProfileMenu, setShowProfileMenu] = useState(false);
 	const [photos, setPhotos] = useState([]);
 	const [loadingPhotos, setLoadingPhotos] = useState(true);
 	const [imageUrls, setImageUrls] = useState({});
 	const [processing, setProcessing] = useState(false);
 	const [processResults, setProcessResults] = useState(null);
 	const [showProcessingModal, setShowProcessingModal] = useState(false);
+	const [showAnalysisModal, setShowAnalysisModal] = useState(false);
 	const [processingStatus, setProcessingStatus] = useState([]);
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [locationOptIn, setLocationOptIn] = useState(false);
 	const [analyzing, setAnalyzing] = useState(false);
 	const [analysisResults, setAnalysisResults] = useState(null);
 	const [showAnalysis, setShowAnalysis] = useState(false);
-	const [analysisProgress, setAnalysisProgress] = useState({ currentPhoto: 0, totalPhotos: 0, status: 'idle' });
+	const [analysisProgress, setAnalysisProgress] = useState({ currentPhoto: 0, totalPhotos: 0, status: "idle" });
 	const [analysisDetails, setAnalysisDetails] = useState([]);
 	const [analysisCounters, setAnalysisCounters] = useState({ photos_found: 0, photos_started: 0, photos_completed: 0, photos_failed: 0, photos_fallback: 0, photos_queued: 0 });
 	const pollIntervalRef = useRef(null);
@@ -48,6 +49,14 @@ export function Dashboard() {
 			Object.values(imageUrls).forEach((url) => URL.revokeObjectURL(url));
 		};
 	}, []);
+
+	// Debug: log full analysis JSON in console (do not show in UI)
+	useEffect(() => {
+		if (!analysisResults) return;
+		if (analysisResults?.error) return;
+		const payload = analysisResults?.details ?? analysisResults;
+		console.log("[ANALYSIS RESULT JSON]", payload);
+	}, [analysisResults]);
 
 	const fetchPhotos = async () => {
 		setLoadingPhotos(true);
@@ -158,7 +167,8 @@ export function Dashboard() {
 			}
 
 			if (res.ok) {
-				setResponse({ success: true, data });
+				// Hide success message; only show errors
+				setResponse(null);
 				setFiles([]);
 				document.getElementById("file-input").value = "";
 				fetchPhotos();
@@ -318,11 +328,11 @@ export function Dashboard() {
 				setPhotos([]);
 				setProcessResults(null);
 				setProcessingStatus([]);
-                setAnalysisResults(null);
-                setShowAnalysis(false);
-                setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: 'idle' });
-                setAnalysisDetails([]);
-                setAnalysisCounters({ photos_found: 0, photos_started: 0, photos_completed: 0, photos_failed: 0, photos_fallback: 0, photos_queued: 0 });
+				setAnalysisResults(null);
+				setShowAnalysis(false);
+				setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: "idle" });
+				setAnalysisDetails([]);
+				setAnalysisCounters({ photos_found: 0, photos_started: 0, photos_completed: 0, photos_failed: 0, photos_fallback: 0, photos_queued: 0 });
 			} else {
 				const data = await res.json();
 				alert(`Fout bij verwijderen: ${data.error || "Onbekende fout"}`);
@@ -372,10 +382,63 @@ export function Dashboard() {
 		return Math.round((completed / processingStatus.length) * 100);
 	};
 
+	const getAnalysisProgressPercentage = () => {
+		// Prefer per-photo statuses for smoother progress (25/50/75 style)
+		// We convert each status into a stage score (0..1) and average across photos.
+		const stageScore = (status) => {
+			switch (status) {
+				case "pending":
+					return 0.0;
+				case "queued":
+					return 0.25;
+				case "processing":
+					return 0.25; // blijft 25 tot we effectief naar llm gaan
+				case "sent_to_llm":
+					return 0.5;
+				case "finalizing":
+					return 0.75;
+				case "completed":
+				case "fallback_used":
+				case "llm_failed":
+				case "error":
+					return 1.0;
+				default:
+					return 0.0;
+			}
+		};
+
+		// If we have detailed statuses, compute a weighted/continuous progress.
+		if (Array.isArray(analysisDetails) && analysisDetails.length > 0) {
+			const total = analysisDetails.length;
+			let sum = 0;
+			for (const p of analysisDetails) {
+				sum += stageScore(p?.analysisStatus);
+			}
+			const pct = Math.round((sum / total) * 100);
+			return Math.max(0, Math.min(100, pct));
+		}
+
+		// Fallback: if details aren't available yet, use counters.
+		const found = Number(analysisCounters?.photos_found || 0);
+		const started = Number(analysisCounters?.photos_started || 0);
+		const total = found || started || 0;
+		if (!total) return 0;
+
+		const processed = Number(analysisCounters?.photos_completed || 0) + Number(analysisCounters?.photos_failed || 0) + Number(analysisCounters?.photos_fallback || 0);
+
+		// If we know analysis started but we don't have details yet, show early progress.
+		if (started > 0 && processed === 0) {
+			// roughly represents "queued/started" stage
+			return 20;
+		}
+
+		return Math.max(0, Math.min(100, Math.round((processed / total) * 100)));
+	};
+
 	const getAnalysisStatusLabel = (status) => {
 		switch (status) {
 			case "completed":
-				return "✓ Completed";
+				return "✓ Processed";
 			case "llm_failed":
 				return "✗ LLM failed";
 			case "fallback_used":
@@ -460,12 +523,28 @@ export function Dashboard() {
 				const data = await res.json();
 				setAnalysisDetails(data.photos || []);
 				setAnalysisCounters(data.counters || {});
-				
-				// Auto-stop polling when all photos are processed
-				const totalProcessed = data.counters.photos_completed + data.counters.photos_failed + data.counters.photos_fallback;
-				if (totalProcessed > 0 && totalProcessed === data.counters.photos_started) {
-					console.log("Analysis complete - stopping polling");
-					stopAnalysisPolling();
+
+				const counters = data.counters || {};
+				const started = Number(counters.photos_started || 0);
+				const processed = Number(counters.photos_completed || 0) + Number(counters.photos_failed || 0) + Number(counters.photos_fallback || 0);
+
+				// Keep the top button/label progress in sync with real counters
+				setAnalysisProgress((prev) => {
+					// If user clicked Analyze, we stay in an "active" state until the final /analyze response returns,
+					// but we can show "finalizing" when all photos are processed.
+					const nextStatus = started > 0 && processed >= started ? "finalizing" : "analyzing";
+					return {
+						...prev,
+						currentPhoto: processed,
+						totalPhotos: started || prev.totalPhotos || 0,
+						status: prev.status === "complete" || prev.status === "error" ? prev.status : nextStatus,
+					};
+				});
+
+				// Keep polling until the final /analyze response comes back.
+				// When all photos are processed we switch UI to "finalizing" but we don't stop polling.
+				if (started > 0 && processed >= started) {
+					console.log("All photos processed - waiting for final JSON (finalizing)");
 				}
 			}
 		} catch (error) {
@@ -478,11 +557,12 @@ export function Dashboard() {
 		if (analyzing) {
 			console.log("Analysis already in progress, ignoring click");
 			return;
-		} 
+		}
 
 		setAnalyzing(true);
+		setShowAnalysisModal(true);
 		setAnalysisResults(null);
-		setAnalysisProgress({ currentPhoto: 0, totalPhotos: photos.length, status: 'analyzing' });
+		setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: "analyzing" });
 		setAnalysisDetails([]);
 		setAnalysisCounters({ photos_found: 0, photos_started: 0, photos_completed: 0, photos_failed: 0, photos_fallback: 0, photos_queued: 0 });
 
@@ -510,15 +590,18 @@ export function Dashboard() {
 			if (res.ok) {
 				setAnalysisResults(data);
 				setShowAnalysis(true);
-				setAnalysisProgress({ currentPhoto: data.analyzedPhotos, totalPhotos: data.analyzedPhotos, status: 'complete' });
-				
+				setAnalysisProgress({ currentPhoto: data.analyzedPhotos, totalPhotos: data.analyzedPhotos, status: "complete" });
+				stopAnalysisPolling();
+				setShowAnalysisModal(false);
+
 				// Update counters from final response
 				if (data.progress) {
 					setAnalysisCounters(data.progress);
 				}
 			} else {
-				setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: 'error' });
+				setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: "error" });
 				stopAnalysisPolling();
+				setShowAnalysisModal(false);
 				if (res.status === 429) {
 					alert(`Please wait: ${data.error || "Analysis already in progress"}`);
 				} else if (res.status === 400) {
@@ -534,8 +617,9 @@ export function Dashboard() {
 			}
 		} catch (error) {
 			console.error("Failed to fetch analysis:", error);
-			setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: 'error' });
+			setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: "error" });
 			stopAnalysisPolling();
+			setShowAnalysisModal(false);
 			alert(`Netwerkfout: ${error.message}`);
 		} finally {
 			setAnalyzing(false);
@@ -550,11 +634,7 @@ export function Dashboard() {
 	// }
 	const details = analysisResults?.details || null;
 	const isNewSchema = !!(details && typeof details === "object" && details.user && details.admin);
-	const userShortSummary =
-		analysisResults?.summary ||
-		details?.user?.short_summary ||
-		details?.short_summary ||
-		"";
+	const userShortSummary = analysisResults?.summary || details?.user?.short_summary || details?.short_summary || "";
 
 	return (
 		<div className="dashboard">
@@ -582,29 +662,90 @@ export function Dashboard() {
 				</div>
 			)}
 
-			<div className="dashboard-header">
-				<h1>User Dashboard</h1>
-				<div className="profile-menu">
-					{user?.isAdmin && (
-						<button 
-							className="admin-link-btn" 
-							onClick={() => navigate("/admin")}
-							title="Admin Dashboard"
-						>
-							🛡️ Admin
-						</button>
-					)}
-					<button className="profile-icon" onClick={() => setShowProfileMenu(!showProfileMenu)}>
-						👤
-					</button>
-					{showProfileMenu && (
-						<div className="profile-dropdown">
-							<div className="profile-email">{user?.email}</div>
-							<button className="logout-btn" onClick={handleLogout}>
-								Uitloggen
-							</button>
+			{showAnalysisModal && (
+				<div className="processing-modal-overlay">
+					<div className="processing-modal">
+						<h2>Analyse uitvoeren</h2>
+
+						<div className="progress-container">
+							<div className="progress-bar">
+								<div className="progress-fill" style={{ width: `${getAnalysisProgressPercentage()}%` }}></div>
+							</div>
+							<div className="progress-text">{getAnalysisProgressPercentage()}%</div>
 						</div>
-					)}
+
+						<div style={{ marginTop: "0.5rem", fontSize: "0.9rem", color: "#bbb" }}>
+							{(() => {
+								const started = Number(analysisCounters?.photos_started || 0);
+								const found = Number(analysisCounters?.photos_found || 0);
+								const completed = Number(analysisCounters?.photos_completed || 0);
+								const failed = Number(analysisCounters?.photos_failed || 0);
+								const fallback = Number(analysisCounters?.photos_fallback || 0);
+								const queued = Number(analysisCounters?.photos_queued || 0);
+
+								const processed = completed + failed + fallback;
+								const total = Array.isArray(analysisDetails) && analysisDetails.length > 0 ? analysisDetails.length : started || found || 0;
+								// Derive a human-friendly phase from per-photo statuses when available
+								const statuses = Array.isArray(analysisDetails) ? analysisDetails.map((p) => p?.analysisStatus).filter(Boolean) : [];
+
+								const phase =
+									analysisProgress.status === "finalizing"
+										? "Finalizing"
+										: statuses.includes("finalizing")
+										? "Finalizing"
+										: statuses.includes("sent_to_llm")
+										? "Sent to LLM"
+										: statuses.includes("processing")
+										? "Processing"
+										: statuses.includes("queued")
+										? "Queued"
+										: started > 0
+										? "Processing"
+										: "Starting";
+
+								if (!total) return "Starting…";
+
+								// When everything is processed, we may still be waiting for the final JSON response
+								if (analysisProgress.status === "finalizing" || (started > 0 && processed >= started)) {
+									return `Finalizing result… (${processed}/${total})`;
+								}
+
+								return `${phase} • ${processed}/${total} • done: ${completed} • fallback: ${fallback} • failed: ${failed}`;
+							})()}
+						</div>
+
+						<div className="processing-status-list" style={{ marginTop: "1rem" }}>
+							{(analysisDetails || [])
+								.filter((p) => p?.analysisStatus !== "queued")
+								.map((photo, index) => (
+									<div key={photo.id || index} className="processing-status-item">
+										<span className="status-filename">
+											Foto {index + 1}: {photo.filename || `Photo ${index + 1}`}
+										</span>
+										<span className={getAnalysisStatusClass(photo.analysisStatus)}>{getAnalysisStatusLabel(photo.analysisStatus)}</span>
+									</div>
+								))}
+
+							{(!analysisDetails || analysisDetails.length === 0) && <div style={{ color: "#888", fontSize: "0.9rem" }}>Waiting for analysis progress…</div>}
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Primary Navigation Bar (same structure as Admin) */}
+			<div className="admin-nav">
+				<div className="admin-nav-left">
+					<h1>User Dashboard</h1>
+				</div>
+
+				<div className="admin-nav-middle">
+					<div className="user-email">{user?.email || "unknown"}</div>
+				</div>
+
+				<div className="admin-nav-right">
+					<button className="logout-btn" onClick={handleLogout}>
+						Logout
+					</button>
 				</div>
 			</div>
 
@@ -636,9 +777,9 @@ export function Dashboard() {
 					</button>
 				</form>
 
-				{response && (
-					<div className={response.success ? "response-box success" : "response-box error"}>
-						<h3>{response.success ? "Success" : "Error"}</h3>
+				{response && !response.success && (
+					<div className="response-box error">
+						<h3>Error</h3>
 						<pre>{JSON.stringify(response.data, null, 2)}</pre>
 					</div>
 				)}
@@ -659,11 +800,6 @@ export function Dashboard() {
 									<div className="photo-filename">{photo.originalFilename}</div>
 									<div className="photo-size">{(photo.size / 1024).toFixed(1)} KB</div>
 									<div className={getStatusBadgeClass(photo.status)}>{getStatusLabel(photo.status)}</div>
-									{photo.extractedText && (
-										<div className="photo-extracted-text">
-											<strong>Gevonden tekst:</strong> {photo.extractedText}
-										</div>
-									)}
 									{photo.errorMessage && (
 										<div className="photo-error-message">
 											<strong>Fout:</strong> {photo.errorMessage}
@@ -683,174 +819,26 @@ export function Dashboard() {
 					{analyzing ? (
 						<>
 							<span className="loading-spinner">⟳</span>
-							<span>Analyzing... {analysisProgress.status === 'analyzing' ? `(${analysisProgress.currentPhoto}/${analysisProgress.totalPhotos})` : ''}</span>
+							<span>Analyzing... {analysisProgress.status === "analyzing" ? `(${analysisProgress.currentPhoto}/${analysisProgress.totalPhotos})` : ""}</span>
 						</>
-					) : "Analyze"}
+					) : (
+						"Analyze"
+					)}
 				</button>
 
 				{/* Explanation for why analyze is disabled */}
 				{!canAnalyze && !analyzing && photos.length > 0 && (
-					<div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#ff9800' }}>
-						⚠️ Analysis requires photos to have completed text extraction (status: "✓ Klaar"). 
-						Click "Next" to process photos first.
-					</div>
+					<div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#ff9800" }}>⚠️ Analysis requires photos to have completed text extraction (status: "✓ Klaar"). Click "Next" to process photos first.</div>
 				)}
 
-				{!canAnalyze && !analyzing && photos.length === 0 && (
-					<div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#888' }}>
-						Upload photos and click "Next" to enable analysis.
-					</div>
-				)}
+				{!canAnalyze && !analyzing && photos.length === 0 && <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#888" }}>Upload photos and click "Next" to enable analysis.</div>}
 
 				{/* Analysis progress explanation */}
-				{canAnalyze && !analyzing && (
-					<div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#888' }}>
-						Analysis may take time. Progress is shown per photo below.
-					</div>
-				)}
-				
-				{analysisProgress.status !== 'idle' && (
-					<div className="analysis-progress" style={{ marginTop: '1rem', padding: '1rem', background: '#1a1a1a', borderRadius: '8px' }}>
-						<h4>📸 Analysis Progress</h4>
-						
-						{/* Progress counters */}
-						<div style={{ marginBottom: '1rem', fontSize: '0.9rem' }}>
-							<div><strong>{analysisCounters.photos_found} photos found</strong></div>
-							<div>{analysisCounters.photos_started} photos started</div>
-							<div style={{ color: '#4CAF50' }}>{analysisCounters.photos_completed} completed</div>
-							<div style={{ color: '#ff9800' }}>{analysisCounters.photos_fallback} fallback</div>
-							<div style={{ color: '#f44336' }}>{analysisCounters.photos_failed} failed</div>
-							{analysisCounters.photos_queued > 0 && <div style={{ color: '#888' }}>{analysisCounters.photos_queued} queued</div>}
-						</div>
-						
-						<div style={{ marginBottom: '0.5rem', fontSize: '0.9rem' }}>
-							Status: <span style={{ 
-								color: analysisProgress.status === 'complete' ? '#4CAF50' : 
-										analysisProgress.status === 'error' ? '#f44336' : '#ff9800',
-								fontWeight: 'bold'
-							}}>
-								{analysisProgress.status === 'analyzing' ? `Analyzing photo ${analysisProgress.currentPhoto} of ${analysisProgress.totalPhotos}...` :
-								 analysisProgress.status === 'complete' ? 'Analysis complete!' :
-									analysisProgress.status === 'error' ? 'Analysis failed' : 'Processing...'}
-							</span>
-						</div>
-						
-						{/* Progress bar */}
-						{analysisProgress.status === 'analyzing' && analysisCounters.photos_started > 0 && (
-							<div style={{ 
-								marginTop: '1rem', 
-								height: '4px', 
-								background: '#333', 
-								borderRadius: '2px',
-								width: `${((analysisCounters.photos_completed + analysisCounters.photos_failed + analysisCounters.photos_fallback) / analysisCounters.photos_started) * 100}%`
-							}} />
-						)}
-
-						{/* Per-photo status list */}
-						{analysisDetails.length > 0 && (
-							<div style={{ marginTop: '1rem' }}>
-								<h5 style={{ marginBottom: '0.5rem', fontSize: '0.9rem' }}>Per-Photo Status:</h5>
-								<div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-									{analysisDetails.map((photo, index) => (
-										<div key={photo.id} style={{ 
-											display: 'flex', 
-											justifyContent: 'space-between', 
-											alignItems: 'center',
-											padding: '0.25rem 0',
-											fontSize: '0.8rem',
-											borderBottom: '1px solid #333'
-										}}>
-											<span style={{ color: '#ccc', marginRight: '0.5rem' }}>
-												{photo.filename || `Photo ${index + 1}`}
-											</span>
-											<span className={getAnalysisStatusClass(photo.analysisStatus)} style={{
-												fontSize: '0.75rem',
-												padding: '2px 6px',
-												borderRadius: '4px',
-												background: photo.analysisStatus === 'completed' ? '#4CAF50' :
-															 photo.analysisStatus === 'llm_failed' ? '#f44336' :
-															 photo.analysisStatus === 'fallback_used' ? '#ff9800' :
-															 photo.analysisStatus === 'processing' ? '#2196F3' :
-															 photo.analysisStatus === 'sent_to_llm' ? '#9C27B0' :
-															 photo.analysisStatus === 'queued' ? '#607D8B' : '#666'
-											}}>
-												{getAnalysisStatusLabel(photo.analysisStatus)}
-											</span>
-										</div>
-									))}
-								</div>
-							</div>
-						)}
-					</div>
-				)}
-
-				{/* Analysis completion message */}
-				{analysisProgress.status === 'complete' && (
-					<div style={{ 
-						marginTop: '1rem', 
-						padding: '1rem', 
-						background: '#1a3d1a', 
-						border: '1px solid #4CAF50', 
-						borderRadius: '8px',
-						fontSize: '0.9rem'
-					}}>
-						{analysisCounters.photos_fallback > 0 || analysisCounters.photos_failed > 0 ? (
-							<div>
-								<strong>Analysis completed with issues:</strong> The system attempted analysis but 
-								{analysisCounters.photos_fallback > 0 && ` ${analysisCounters.photos_fallback} photo(s) used fallback logic`}
-								{analysisCounters.photos_fallback > 0 && analysisCounters.photos_failed > 0 && ' and'}
-								{analysisCounters.photos_failed > 0 && ` ${analysisCounters.photos_failed} photo(s) failed`}.
-								{analysisCounters.photos_fallback > 0 && (
-									<div style={{ marginTop: '0.5rem', fontStyle: 'italic' }}>
-										<strong>Important:</strong> The system attempted analysis but the model did not respond in time for some photos.
-									</div>
-								)}
-							</div>
-						) : (
-							<div>
-								<strong>Analysis completed successfully!</strong> All {analysisCounters.photos_completed} photos were processed without issues.
-							</div>
-						)}
-					</div>
-				)}
+				{canAnalyze && !analyzing && <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#888" }}>Analysis may take time. Progress is shown per photo below.</div>}
 
 				<button className="clear-btn" onClick={handleClearAll} disabled={processing || photos.length === 0}>
 					Clear list
 				</button>
-
-				{processResults && (
-					<div className="process-results">
-						<h3>Verwerkingsresultaten</h3>
-						{processResults.error ? (
-							<div className="error-message">{processResults.error}</div>
-						) : (
-							<>
-								<div className="process-summary">
-									<span>Verwerkt: {processResults.processedCount}</span>
-									<span>Succes: {processResults.successCount}</span>
-									<span>Fouten: {processResults.errorCount}</span>
-								</div>
-								<div className="results-list">
-									{processResults.results.map((result, index) => (
-										<div key={index} className={`result-item ${result.status}`}>
-											<div className="result-filename">📄 {result.filename}</div>
-											{result.extractedText && (
-												<div className="result-text">
-													<strong>Tekst:</strong> {result.extractedText}
-												</div>
-											)}
-											{result.errorMessage && (
-												<div className="result-error">
-													<strong>Fout:</strong> {result.errorMessage}
-												</div>
-											)}
-										</div>
-									))}
-								</div>
-							</>
-						)}
-					</div>
-				)}
 
 				{showAnalysis && analysisResults && (
 					<div className="analysis-section">
@@ -885,34 +873,6 @@ export function Dashboard() {
 								<h3>Important things to remember</h3>
 								<div className="analysis-summary">
 									<p className="summary-text">{userShortSummary || "No summary available."}</p>
-								</div>
-								{/* Full JSON output for debugging */}
-								<div className="detail-section">
-									<h4>🔍 Complete Analysis Data</h4>
-									<div
-										style={{
-											maxHeight: "400px",
-											overflowY: "auto",
-											background: "#1a1a1a",
-											border: "1px solid #333",
-											borderRadius: "8px",
-											padding: "1rem",
-											marginTop: "1rem",
-										}}
-									>
-										<pre
-											style={{
-												color: "#fff",
-												fontSize: "0.9rem",
-												lineHeight: "1.4",
-												margin: 0,
-												whiteSpace: "pre-wrap",
-												wordBreak: "break-word",
-											}}
-										>
-											{JSON.stringify(details || analysisResults, null, 2)}
-										</pre>
-									</div>
 								</div>
 							</>
 						)}

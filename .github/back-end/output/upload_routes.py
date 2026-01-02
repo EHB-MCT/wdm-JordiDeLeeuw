@@ -940,7 +940,6 @@ def build_final_result_json(short_summary: str, admin_metrics: dict):
 def analyze_photos():
     #analyze OCR text using Ollama LLM
     import json
-    import time
 
     #simple in-memory lock to prevent concurrent analyze requests
     if not hasattr(analyze_photos, '_locks'):
@@ -985,10 +984,12 @@ def analyze_photos():
             "photos_fallback": 0,
         }
 
-        # Mark each photo as processing/completed so your progress UI keeps working
+        # Mark each photo as processing while we build metrics + run the LLM summary.
+        # IMPORTANT: Do NOT mark as "completed" until the FINAL result is saved.
         for photo_idx, photo in enumerate(photos_data):
             photo_id = str(photo["_id"])
             filename = photo.get("originalFilename", f"photo_{photo_id}")
+
             auth_backend.update_analysis_progress(photo_id, "processing")
             analysis_progress["photos_started"] += 1
 
@@ -1004,9 +1005,6 @@ def analyze_photos():
                 "textLength": len(text),
             }
 
-            auth_backend.update_analysis_progress(photo_id, "completed")
-            analysis_progress["photos_completed"] += 1
-
         # Deterministic admin metrics (matches AdminDashboard expected shape)
         admin_metrics = build_admin_metrics_from_ocr(ocr_texts)
 
@@ -1019,6 +1017,12 @@ def analyze_photos():
         except Exception as e:
             print(f"NameEntities LLM override failed: {e}")
 
+        # Mark photos as sent_to_llm right before calling the LLM
+        for pid in per_photo_results.keys():
+            try:
+                auth_backend.update_analysis_progress(pid, "sent_to_llm")
+            except Exception as e:
+                print(f"Warning: failed to mark photo {pid} as sent_to_llm: {e}")
         # LLM summary (ONLY user short summary)
         combined_text = "\n\n".join(ocr_texts)
         # Safety: do not send extremely large prompts
@@ -1102,6 +1106,13 @@ OCR text:
 
         final_result_json = build_final_result_json(short_summary, admin_metrics)
 
+        # Finalizing: we have the final JSON, now persist it.
+        for pid in per_photo_results.keys():
+            try:
+                auth_backend.update_analysis_progress(pid, "finalizing")
+            except Exception as e:
+                print(f"Warning: failed to mark photo {pid} as finalizing: {e}")
+
         # Save combined user summary (shortSummary mirrors user.short_summary)
         try:
             summary_id = auth_backend.save_user_summary(
@@ -1114,10 +1125,25 @@ OCR text:
             print(f"Saved user summary ID: {summary_id}")
         except Exception as e:
             print(f"Failed to save user summary: {e}")
+            # If saving fails, mark involved photos as error so the UI doesn't show completed.
+            for pid in per_photo_results.keys():
+                try:
+                    auth_backend.update_analysis_progress(pid, "error", error_message="Failed to save analysis results")
+                except Exception:
+                    pass
             return jsonify({
                 "error": "Failed to save analysis results",
                 "details": str(e)
             }), 500
+
+        # Only mark completed AFTER the summary is successfully saved.
+        for pid in per_photo_results.keys():
+            try:
+                auth_backend.update_analysis_progress(pid, "completed")
+            except Exception as e:
+                print(f"Warning: failed to mark photo {pid} as completed: {e}")
+
+        analysis_progress["photos_completed"] = len(per_photo_results)
 
         return jsonify({
             "summary": final_result_json.get("user", {}).get("short_summary", ""),
@@ -1138,7 +1164,7 @@ OCR text:
         }), 500
     finally:
         #clean up the lock
-        if hasattr(analyze_photos, '_locks') and user_id in analyze_photos._locks:
+        if hasattr(analyze_photos, '_locks') and 'user_id' in locals() and user_id in analyze_photos._locks:
             del analyze_photos._locks[user_id]
 
 @upload_bp.route("/api/photos/analysis-progress", methods=["GET"])
@@ -1150,20 +1176,59 @@ def get_analysis_progress():
             return jsonify({"error": "Unauthorized - no user ID provided"}), 401
 
         progress_data = auth_backend.get_analysis_progress(user_id)
-        
-        # Calculate counters
+
+        # Only count photos that are eligible for analysis (OCR done)
+        eligible = [p for p in progress_data if p.get("ocrStatus") == "done"]
+
+        def _is_active(status: str) -> bool:
+            return status in [
+                "queued",
+                "processing",
+                "sent_to_llm",
+                "finalizing",
+                "llm_failed",
+                "fallback_used",
+                "completed",
+                "error",
+            ]
+
+        def _is_failed(status: str) -> bool:
+            return status in ["llm_failed", "error"]
+
+        # Calculate counters (based on eligible photos only)
         counters = {
-            "photos_found": len(progress_data),
-            "photos_started": len([p for p in progress_data if p["analysisStatus"] in ["processing", "sent_to_llm", "llm_failed", "fallback_used", "completed"]]),
-            "photos_completed": len([p for p in progress_data if p["analysisStatus"] == "completed"]),
-            "photos_failed": len([p for p in progress_data if p["analysisStatus"] == "llm_failed"]),
-            "photos_fallback": len([p for p in progress_data if p["analysisStatus"] == "fallback_used"]),
-            "photos_queued": len([p for p in progress_data if p["analysisStatus"] == "queued"])
+            "photos_total": len(eligible),
+            "photos_started": len([p for p in eligible if _is_active(p.get("analysisStatus", "pending"))]),
+            "photos_processing": len([p for p in eligible if p.get("analysisStatus") == "processing"]),
+            "photos_sent_to_llm": len([p for p in eligible if p.get("analysisStatus") == "sent_to_llm"]),
+            "photos_finalizing": len([p for p in eligible if p.get("analysisStatus") == "finalizing"]),
+            "photos_completed": len([p for p in eligible if p.get("analysisStatus") == "completed"]),
+            "photos_failed": len([p for p in eligible if _is_failed(p.get("analysisStatus", "pending"))]),
+            "photos_fallback": len([p for p in eligible if p.get("analysisStatus") == "fallback_used"]),
+            "photos_queued": len([p for p in eligible if p.get("analysisStatus") == "queued"]),
         }
-        
+
+        # Provide a simple phase hint for the frontend
+        if counters["photos_total"] == 0:
+            phase = "waiting_for_ocr"
+        elif counters["photos_finalizing"] > 0:
+            phase = "finalizing"
+        elif counters["photos_sent_to_llm"] > 0:
+            phase = "sent_to_llm"
+        elif counters["photos_processing"] > 0:
+            phase = "processing"
+        elif counters["photos_queued"] > 0:
+            phase = "queued"
+        elif counters["photos_completed"] == counters["photos_total"]:
+            phase = "completed"
+        else:
+            phase = "idle"
+
         return jsonify({
-            "photos": progress_data,
-            "counters": counters
+            "photos": progress_data,  # still return full list for any UI lists
+            "eligiblePhotos": eligible,
+            "counters": counters,
+            "phase": phase,
         }), 200
 
     except Exception as e:
