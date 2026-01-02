@@ -103,15 +103,25 @@ export function AdminDashboard() {
 					const data = await statsRes.json();
 					msg = data?.error || msg;
 				} catch {
-					// JSON parsing failed, use default message
+					// ignore
 				}
 				setError(msg);
 				setStats(null);
 				return;
 			}
 
-			const statsData = await statsRes.json();
-			setStats(statsData);
+			const liveStats = await statsRes.json();
+
+			const statsObj = {
+				timestampLeakage: liveStats.timestampLeakage,
+				socialContextLeakage: liveStats.socialContextLeakage,
+				professionalLiabilitySignals: liveStats.professionalLiabilitySignals,
+				locationLeakageSignals: liveStats.locationLeakageSignals,
+				totalPhotos: liveStats.totalPhotos ?? 0,
+				totalUsers: liveStats.totalUsers ?? 0,
+			};
+
+			setStats(statsObj);
 			setError(null);
 		} catch {
 			setError("Network error - could not reach server");
@@ -185,10 +195,10 @@ export function AdminDashboard() {
 						<div className="profile-email">{user?.email}</div>
 
 						<div className="data-mode-toggle">
-							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
+							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
 								Demo
 							</button>
-							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend" disabled>
+							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend">
 								Live
 							</button>
 						</div>
@@ -216,10 +226,10 @@ export function AdminDashboard() {
 							Logout
 						</button>
 						<div className="data-mode-toggle">
-							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
+							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
 								Demo
 							</button>
-							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend" disabled>
+							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend">
 								Live
 							</button>
 						</div>
@@ -251,10 +261,10 @@ export function AdminDashboard() {
 						Logout
 					</button>
 					<div className="data-mode-toggle">
-						<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
+						<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
 							Demo
 						</button>
-						<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend" disabled>
+						<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend">
 							Live
 						</button>
 					</div>

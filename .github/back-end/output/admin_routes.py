@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from auth_backend import check_admin_status, get_admin_stats, get_admin_trends
+from auth_backend import check_admin_status, get_admin_ai_aggregated_stats, get_admin_trends, get_admin_analyses_overview
 
 # Create admin blueprint
 admin_bp = Blueprint("admin", __name__)
@@ -34,7 +34,7 @@ def get_admin_stats_endpoint():
         print(f"Admin stats: Access granted for admin user {user_id}")
         
         # Get admin stats
-        stats = get_admin_stats()
+        stats = get_admin_ai_aggregated_stats()
         if not stats:
             return jsonify({"error": "Failed to retrieve admin statistics"}), 500
             
@@ -80,5 +80,37 @@ def get_admin_trends_endpoint():
         traceback.print_exc()
         return jsonify({
             "error": "Failed to retrieve trends",
+            "details": str(e)
+        }), 500
+
+@admin_bp.route("/api/admin/analyses", methods=["GET"])
+def get_admin_analyses_endpoint():
+    """Get an overview list of all analyses across all users - admin only endpoint"""
+    try:
+        # Check authentication
+        user_id = check_auth(request)
+        if not user_id:
+            return jsonify({"error": "Unauthorized - no user ID provided"}), 401
+
+        # Check admin status
+        if not check_admin_status(user_id):
+            return jsonify({"error": "admin only"}), 403
+
+        # Optional limit (default 100, max 500)
+        limit = request.args.get("limit", 100, type=int)
+        if limit < 1:
+            limit = 1
+        if limit > 500:
+            limit = 500
+
+        items = get_admin_analyses_overview(limit=limit)
+        return jsonify({"items": items, "count": len(items)}), 200
+
+    except Exception as e:
+        print(f"Admin analyses overview error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Failed to retrieve analyses overview",
             "details": str(e)
         }), 500

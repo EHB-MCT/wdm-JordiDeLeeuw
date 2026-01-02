@@ -752,3 +752,158 @@ def get_admin_trends(days: int = 7) -> dict:
         import traceback
         traceback.print_exc()
         return {}
+
+def get_admin_ai_aggregated_stats():
+    """
+    Aggregate ALL AI analysis results across ALL users.
+    Output structure MUST match AdminDashboard demoData exactly.
+
+    Expected keys:
+      - totalUsers, totalPhotos
+      - timestampLeakage: [{hour:0..23,count:int}, ...]
+      - socialContextLeakage: {relationshipLabels,handles,emails,phonePatterns,nameEntities}
+      - professionalLiabilitySignals: [{name,count}, ...]
+      - locationLeakageSignals: [{name,count}, ...]
+    """
+    try:
+        aggregated = {
+            "totalUsers": int(users.count_documents({})),
+            "totalPhotos": int(photos.count_documents({})),
+            "timestampLeakage": [{"hour": i, "count": 0} for i in range(24)],
+            "socialContextLeakage": {
+                "relationshipLabels": 0,
+                "handles": 0,
+                "emails": 0,
+                "phonePatterns": 0,
+                "nameEntities": 0,
+            },
+            "professionalLiabilitySignals": [
+                {"name": "Aggression Hits", "count": 0},
+                {"name": "Profanity Hits", "count": 0},
+                {"name": "Shouting Hits", "count": 0},
+            ],
+            "locationLeakageSignals": [
+                {"name": "Explicit location keywords", "count": 0},
+                {"name": "Travel/route context", "count": 0},
+                {"name": "No location signals", "count": 0},
+            ],
+        }
+
+        # Fast lookup maps for accumulating list-based signals
+        pls_map = {p["name"]: p for p in aggregated["professionalLiabilitySignals"]}
+        lls_map = {l["name"]: l for l in aggregated["locationLeakageSignals"]}
+
+        # Only pull the fields we need
+        cursor = summaries.find(
+            {"resultJson.admin": {"$exists": True}},
+            {"resultJson.admin": 1}
+        )
+
+        for summary in cursor:
+            admin = (summary.get("resultJson") or {}).get("admin") or {}
+
+            # TIMESTAMP LEAKAGE
+            for entry in admin.get("timestampLeakage", []) or []:
+                try:
+                    hour = entry.get("hour")
+                    count = int(entry.get("count", 0) or 0)
+                except Exception:
+                    continue
+                if isinstance(hour, int) and 0 <= hour <= 23:
+                    aggregated["timestampLeakage"][hour]["count"] += count
+
+            # SOCIAL CONTEXT LEAKAGE
+            scl = admin.get("socialContextLeakage") or {}
+            for key in aggregated["socialContextLeakage"].keys():
+                try:
+                    aggregated["socialContextLeakage"][key] += int(scl.get(key, 0) or 0)
+                except Exception:
+                    # keep going even if a field is malformed
+                    pass
+
+            # PROFESSIONAL LIABILITY SIGNALS
+            for signal in admin.get("professionalLiabilitySignals", []) or []:
+                name = signal.get("name")
+                if name in pls_map:
+                    try:
+                        pls_map[name]["count"] += int(signal.get("count", 0) or 0)
+                    except Exception:
+                        pass
+
+            # LOCATION LEAKAGE SIGNALS
+            for signal in admin.get("locationLeakageSignals", []) or []:
+                name = signal.get("name")
+                if name in lls_map:
+                    try:
+                        lls_map[name]["count"] += int(signal.get("count", 0) or 0)
+                    except Exception:
+                        pass
+
+        return aggregated
+
+    except Exception as e:
+        print(f"ERROR aggregating admin AI stats: {e}")
+        import traceback
+        traceback.print_exc()
+        # Always return a valid empty structure so the dashboard never crashes
+        return {
+            "totalUsers": 0,
+            "totalPhotos": 0,
+            "timestampLeakage": [{"hour": i, "count": 0} for i in range(24)],
+            "socialContextLeakage": {
+                "relationshipLabels": 0,
+                "handles": 0,
+                "emails": 0,
+                "phonePatterns": 0,
+                "nameEntities": 0,
+            },
+            "professionalLiabilitySignals": [
+                {"name": "Aggression Hits", "count": 0},
+                {"name": "Profanity Hits", "count": 0},
+                {"name": "Shouting Hits", "count": 0},
+            ],
+            "locationLeakageSignals": [
+                {"name": "Explicit location keywords", "count": 0},
+                {"name": "Travel/route context", "count": 0},
+                {"name": "No location signals", "count": 0},
+            ],
+        }
+
+
+# New helper: get_admin_analyses_overview
+def get_admin_analyses_overview(limit: int = 100):
+    """Return an overview of the most recent analyses across ALL users.
+
+    Intended for an admin "All analyses" screen.
+    """
+    try:
+        limit = max(1, min(int(limit), 500))
+
+        cursor = summaries.find({}, sort=[("createdAt", -1)], limit=limit)
+        out = []
+
+        for s in cursor:
+            user_id = s.get("userId")
+            email = None
+            try:
+                if user_id:
+                    u = users.find_one({"_id": user_id}, {"email": 1})
+                    email = u.get("email") if u else None
+            except Exception:
+                email = None
+
+            source_ids = s.get("sourcePhotoIds") or []
+            out.append({
+                "summaryId": str(s.get("_id")),
+                "userId": str(user_id) if user_id else None,
+                "userEmail": email,
+                "createdAt": s.get("createdAt").isoformat() if s.get("createdAt") else None,
+                "shortSummary": s.get("shortSummary", ""),
+                "analyzedPhotos": len(source_ids),
+            })
+
+        return out
+
+    except Exception as e:
+        print(f"Error in get_admin_analyses_overview: {e}")
+        return []
