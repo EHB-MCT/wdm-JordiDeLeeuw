@@ -1,11 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "./AuthContext";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, RadialBarChart, RadialBar } from "recharts";
-import "./Dashboard.css";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import "./AdminDashboard.css";
 
 const API_BASE = "";
 
-// OCR Text Privacy Risk Demo Data - will be replaced by real backend data
 const demoData = {
 	totalUsers: 156,
 	totalPhotos: 1247,
@@ -32,8 +31,26 @@ const demoData = {
 	],
 };
 
+function prettyLabel(key) {
+	return key
+		.replace(/([A-Z])/g, " $1")
+		.replace(/^./, (c) => c.toUpperCase())
+		.replace("Iban", "IBAN");
+}
+
+function safeArray24(arr) {
+	if (Array.isArray(arr) && arr.length === 24) return arr;
+	return Array.from({ length: 24 }, (_, i) => ({ hour: i, count: 0 }));
+}
+
+function safeSignals(arr, fallback) {
+	if (Array.isArray(arr) && arr.length) return arr;
+	return fallback;
+}
+
 export function AdminDashboard() {
 	const { user, logout } = useAuth();
+
 	const [stats, setStats] = useState(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
@@ -41,9 +58,8 @@ export function AdminDashboard() {
 	const [useLiveMode, setUseLiveMode] = useState(false);
 
 	useEffect(() => {
-		if (user) {
-			verifyAdminAndFetchStats();
-		} else {
+		if (user) verifyAdminAndFetchStats();
+		else {
 			setLoading(false);
 			setIsVerifiedAdmin(false);
 			setStats(null);
@@ -56,14 +72,12 @@ export function AdminDashboard() {
 		setError(null);
 
 		if (!useLiveMode) {
-			// Demo mode
 			setIsVerifiedAdmin(true);
 			setStats(demoData);
 			setLoading(false);
 			return;
 		}
 
-		// Live mode
 		try {
 			const meRes = await fetch(`${API_BASE}/api/me`, {
 				headers: { "X-User-Id": user.userId },
@@ -74,9 +88,7 @@ export function AdminDashboard() {
 				try {
 					const data = await meRes.json();
 					msg = data?.error ? `Admin verification failed: ${data.error}` : msg;
-				} catch {
-					// JSON parsing failed, use default message
-				}
+				} catch {}
 				setError(msg);
 				setIsVerifiedAdmin(false);
 				setStats(null);
@@ -102,26 +114,14 @@ export function AdminDashboard() {
 				try {
 					const data = await statsRes.json();
 					msg = data?.error || msg;
-				} catch {
-					// ignore
-				}
+				} catch {}
 				setError(msg);
 				setStats(null);
 				return;
 			}
 
-			const liveStats = await statsRes.json();
-
-			const statsObj = {
-				timestampLeakage: liveStats.timestampLeakage,
-				socialContextLeakage: liveStats.socialContextLeakage,
-				professionalLiabilitySignals: liveStats.professionalLiabilitySignals,
-				locationLeakageSignals: liveStats.locationLeakageSignals,
-				totalPhotos: liveStats.totalPhotos ?? 0,
-				totalUsers: liveStats.totalUsers ?? 0,
-			};
-
-			setStats(statsObj);
+			const live = await statsRes.json();
+			setStats(live);
 			setError(null);
 		} catch {
 			setError("Network error - could not reach server");
@@ -132,239 +132,293 @@ export function AdminDashboard() {
 		}
 	};
 
-	// Use stats if present, otherwise fall back to demoData
 	const dataSource = stats || demoData;
 
-	// Compute totals for header
 	const totals = useMemo(() => {
-		if (useLiveMode && stats && stats.totalUsers !== undefined && stats.totalPhotos !== undefined) {
-			// Live mode with actual data
-			return {
-				totalUsers: stats.totalUsers,
-				totalPhotos: stats.totalPhotos,
-			};
-		} else {
-			// Demo mode or live mode without data
-			return {
-				totalUsers: demoData.totalUsers,
-				totalPhotos: demoData.totalPhotos,
-			};
-		}
-	}, [useLiveMode, stats]);
+		const totalUsers = typeof dataSource?.totalUsers === "number" ? dataSource.totalUsers : demoData.totalUsers;
+		const totalPhotos = typeof dataSource?.totalPhotos === "number" ? dataSource.totalPhotos : demoData.totalPhotos;
+		return { totalUsers, totalPhotos };
+	}, [dataSource]);
 
 	const timestampHeatmapData = useMemo(() => {
-		return dataSource?.timestampLeakage || demoData.timestampLeakage;
+		return safeArray24(dataSource?.timestampLeakage);
 	}, [dataSource]);
 
 	const socialContextData = useMemo(() => {
 		const obj = dataSource?.socialContextLeakage || demoData.socialContextLeakage;
 		return Object.entries(obj).map(([key, count]) => ({
-			category: key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()),
-			count,
+			category: prettyLabel(key),
+			count: Number.isFinite(Number(count)) ? Number(count) : 0,
 		}));
 	}, [dataSource]);
 
 	const liabilitySignalsData = useMemo(() => {
-		return dataSource?.professionalLiabilitySignals || demoData.professionalLiabilitySignals;
+		return safeSignals(dataSource?.professionalLiabilitySignals, demoData.professionalLiabilitySignals);
 	}, [dataSource]);
 
 	const locationLeakageData = useMemo(() => {
-		return dataSource?.locationLeakageSignals || demoData.locationLeakageSignals;
+		return safeSignals(dataSource?.locationLeakageSignals, demoData.locationLeakageSignals);
 	}, [dataSource]);
+
+	const modeLabel = useLiveMode ? "Live" : "Demo";
 
 	if (loading) {
 		return (
-			<div className="dashboard">
-				<div className="dashboard-header">
-					<div className="dashboard-header-content">
+			<div className="dashboard page">
+				<div className="admin-nav">
+					<div className="admin-nav-left">
 						<h1>Admin Dashboard</h1>
-						<div className="profile-email">{user?.email}</div>
+						<span className={`pill ${modeLabel.toLowerCase()}`}>{modeLabel}</span>
+					</div>
+					<div className="admin-nav-middle">
+						<div className="user-email">{user?.email || "unknown"}</div>
+					</div>
+					<div className="admin-nav-right">
+						<div className="data-mode-toggle">
+							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data">
+								Demo
+							</button>
+							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data">
+								Live
+							</button>
+						</div>
+						<button className="logout-btn" onClick={logout}>
+							Logout
+						</button>
 					</div>
 				</div>
-				<div className="chart-note">Loading…</div>
+
+				<div className="admin-summary">
+					Users: {totals.totalUsers} • Photos: {totals.totalPhotos}
+				</div>
+
+				<div className="status-panel">
+					<div className="status-title">Loading</div>
+					<div className="status-subtitle">Fetching dashboard data…</div>
+				</div>
 			</div>
 		);
 	}
 
 	if (error) {
 		return (
-			<div className="dashboard">
-				<div className="dashboard-header">
-					<div className="dashboard-header-content">
+			<div className="dashboard page">
+				<div className="admin-nav">
+					<div className="admin-nav-left">
 						<h1>Admin Dashboard</h1>
-						<div className="profile-email">{user?.email}</div>
-
+						<span className={`pill ${modeLabel.toLowerCase()}`}>{modeLabel}</span>
+					</div>
+					<div className="admin-nav-middle">
+						<div className="user-email">{user?.email || "unknown"}</div>
+					</div>
+					<div className="admin-nav-right">
 						<div className="data-mode-toggle">
-							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
+							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data">
 								Demo
 							</button>
-							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend">
+							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data">
 								Live
 							</button>
 						</div>
+						<button className="logout-btn" onClick={logout}>
+							Logout
+						</button>
 					</div>
 				</div>
 
-				<div className="chart-note">{error}</div>
+				<div className="admin-summary">
+					Users: {totals.totalUsers} • Photos: {totals.totalPhotos}
+				</div>
+
+				<div className="status-panel error">
+					<div className="status-title">Error</div>
+					<div className="status-subtitle">{error}</div>
+					<div className="status-hint">
+						If Live fails, verify Vite proxy and that backend registers <code>/api/admin/stats</code>.
+					</div>
+				</div>
 			</div>
 		);
 	}
 
 	if (!isVerifiedAdmin) {
 		return (
-			<div className="dashboard">
-				{/* Primary Navigation Bar */}
+			<div className="dashboard page">
 				<div className="admin-nav">
 					<div className="admin-nav-left">
 						<h1>Admin Dashboard</h1>
+						<span className={`pill ${modeLabel.toLowerCase()}`}>{modeLabel}</span>
 					</div>
 					<div className="admin-nav-middle">
 						<div className="user-email">{user?.email || "unknown"}</div>
 					</div>
 					<div className="admin-nav-right">
-						<button className="logout-btn" onClick={logout}>
-							Logout
-						</button>
 						<div className="data-mode-toggle">
-							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
+							<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data">
 								Demo
 							</button>
-							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend">
+							<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data">
 								Live
 							</button>
 						</div>
+						<button className="logout-btn" onClick={logout}>
+							Logout
+						</button>
 					</div>
 				</div>
 
-				{/* Secondary Summary Bar */}
 				<div className="admin-summary">
-					{totals ? `Users: ${totals.totalUsers} • Photos: ${totals.totalPhotos}` : "Users: — • Photos: —"}
+					Users: {totals.totalUsers} • Photos: {totals.totalPhotos}
 				</div>
 
-				<div className="chart-note">Access denied.</div>
+				<div className="status-panel error">
+					<div className="status-title">Access denied</div>
+					<div className="status-subtitle">Admin privileges required.</div>
+				</div>
 			</div>
 		);
 	}
 
 	return (
-		<div className="dashboard">
-			{/* Primary Navigation Bar */}
+		<div className="dashboard page">
 			<div className="admin-nav">
 				<div className="admin-nav-left">
 					<h1>Admin Dashboard</h1>
+					<span className={`pill ${modeLabel.toLowerCase()}`}>{modeLabel}</span>
 				</div>
 				<div className="admin-nav-middle">
 					<div className="user-email">{user?.email || "unknown"}</div>
 				</div>
 				<div className="admin-nav-right">
-					<button className="logout-btn" onClick={logout}>
-						Logout
-					</button>
 					<div className="data-mode-toggle">
-						<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data - will be replaced by live stats">
+						<button className={`mode-toggle ${!useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(false)} title="Demo data">
 							Demo
 						</button>
-						<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data from backend">
+						<button className={`mode-toggle ${useLiveMode ? "active" : ""}`} onClick={() => setUseLiveMode(true)} title="Live data">
 							Live
 						</button>
 					</div>
+					<button className="logout-btn" onClick={logout}>
+						Logout
+					</button>
 				</div>
 			</div>
 
-			{/* Secondary Summary Bar */}
 			<div className="admin-summary">
-				{totals ? `Users: ${totals.totalUsers} • Photos: ${totals.totalPhotos}` : "Users: — • Photos: —"}
+				Users: {totals.totalUsers} • Photos: {totals.totalPhotos}
 			</div>
 
 			<div className="charts-grid">
-				{/* Chart 1: Timestamp Leakage Heatmap */}
 				<div className="chart-card">
-					<h2>Timestamp Leakage Heatmap (00–23h)</h2>
-					<div className="chart-subtitle">How often system-clock timestamps appear in OCR text</div>
+					<div className="card-head">
+						<div>
+							<h2>Timestamp Leakage</h2>
+							<div className="chart-subtitle">How often time-like stamps appear in OCR text</div>
+						</div>
+					</div>
 
-					<div className="chart-container">
-						<ResponsiveContainer width="100%" height={300}>
-							<BarChart data={timestampHeatmapData}>
-								<CartesianGrid strokeDasharray="1 2" />
-								<XAxis dataKey="hour" />
-								<YAxis />
+					<div className="chart-container tall">
+						<ResponsiveContainer width="100%" height="100%">
+							<BarChart data={timestampHeatmapData} margin={{ top: 12, right: 16, left: 8, bottom: 12 }}>
+								<CartesianGrid strokeDasharray="2 3" />
+								<XAxis dataKey="hour" tick={{ fontSize: 12 }} />
+								<YAxis tick={{ fontSize: 12 }} />
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="count" fill="#8884d8" />
+								<Bar dataKey="count" />
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
 
-					<div className="chart-note">Demo data — shows timestamp leakage frequency per hour</div>
+					<div className="chart-note">{useLiveMode ? "Live aggregated data across all analyses" : "Demo data"}</div>
 				</div>
 
-				{/* Chart 2: Social Context Leakage */}
 				<div className="chart-card">
-					<h2>Social Context Leakage — identifiers detected</h2>
-					<div className="chart-subtitle">Personal identifiers found in OCR text</div>
+					<div className="card-head">
+						<div>
+							<h2>Social Context Leakage</h2>
+							<div className="chart-subtitle">Identifiers detected in OCR text</div>
+						</div>
+					</div>
 
 					<div className="chart-container">
-						<ResponsiveContainer width="100%" height={250}>
-							<BarChart data={socialContextData}>
-								<CartesianGrid strokeDasharray="1 2" />
-								<XAxis dataKey="category" />
-								<YAxis />
+						<ResponsiveContainer width="100%" height="100%">
+							<BarChart data={socialContextData} margin={{ top: 12, right: 16, left: 8, bottom: 56 }}>
+								<CartesianGrid strokeDasharray="2 3" />
+								<XAxis dataKey="category" tick={{ fontSize: 11 }} interval={0} angle={-18} textAnchor="end" height={60} />
+								<YAxis tick={{ fontSize: 12 }} />
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="count" fill="#82ca9d" />
+								<Bar dataKey="count" />
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
 
-					<div className="chart-note">Higher counts indicate more social context exposure</div>
+					<div className="chart-note">Higher counts indicate more exposure risk if shared publicly.</div>
 				</div>
 
-				{/* Chart 3: Professional Liability Signals */}
 				<div className="chart-card">
-					<h2>Professional Liability Signals</h2>
-					<div className="chart-subtitle">Risks detected in OCR text</div>
+					<div className="card-head">
+						<div>
+							<h2>Professional Liability Signals</h2>
+							<div className="chart-subtitle">Heuristic signals derived from OCR content</div>
+						</div>
+					</div>
 
 					<div className="chart-container">
-						<ResponsiveContainer width="100%" height={200}>
-							<BarChart data={liabilitySignalsData}>
-								<CartesianGrid strokeDasharray="1 2" />
-								<XAxis dataKey="name" />
-								<YAxis />
+						<ResponsiveContainer width="100%" height="100%">
+							<BarChart data={liabilitySignalsData} margin={{ top: 12, right: 16, left: 8, bottom: 12 }}>
+								<CartesianGrid strokeDasharray="2 3" />
+								<XAxis dataKey="name" tick={{ fontSize: 11 }} />
+								<YAxis tick={{ fontSize: 12 }} />
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="count" fill="#ff7c7c" />
+								<Bar dataKey="count" />
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
 
 					<div className="definition-box">
-						<strong>Definitions:</strong><br />
-						• <strong>Aggression Hits:</strong> Count of OCR lines containing aggressive verbs/insults (demo rule-based)<br />
-						• <strong>Profanity Hits:</strong> Count of OCR lines matching a profanity wordlist (demo rule-based)<br />
-						• <strong>Shouting Hits:</strong> Count of OCR lines with ALL CAPS words or excessive exclamation marks (demo rule-based)
+						<strong>Definitions</strong>
+						<div className="def-row">
+							<span>Aggression Hits</span>
+							<span>Lines containing aggressive verbs or insults</span>
+						</div>
+						<div className="def-row">
+							<span>Profanity Hits</span>
+							<span>Matches from a profanity wordlist</span>
+						</div>
+						<div className="def-row">
+							<span>Shouting Hits</span>
+							<span>ALL CAPS or excessive exclamation marks</span>
+						</div>
 					</div>
-					<div className="chart-note">Demo-only heuristic. This flags risk if screenshots were shared publicly; it does not judge person.</div>
+
+					<div className="chart-note">This is a risk indicator, not a judgment.</div>
 				</div>
 
-				{/* Chart 4: Location Leakage Signals */}
 				<div className="chart-card">
-					<h2>Location Leakage Signals in OCR Text</h2>
-					<div className="chart-subtitle">Location information detected in OCR content</div>
+					<div className="card-head">
+						<div>
+							<h2>Location Leakage Signals</h2>
+							<div className="chart-subtitle">Location context inferred from OCR text</div>
+						</div>
+					</div>
 
 					<div className="chart-container">
-						<ResponsiveContainer width="100%" height={200}>
-							<BarChart data={locationLeakageData}>
-								<CartesianGrid strokeDasharray="1 2" />
-								<XAxis dataKey="name" />
-								<YAxis />
+						<ResponsiveContainer width="100%" height="100%">
+							<BarChart data={locationLeakageData} margin={{ top: 12, right: 16, left: 8, bottom: 12 }}>
+								<CartesianGrid strokeDasharray="2 3" />
+								<XAxis dataKey="name" tick={{ fontSize: 11 }} />
+								<YAxis tick={{ fontSize: 12 }} />
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="count" fill="#22d3ee" />
+								<Bar dataKey="count" />
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
 
-					<div className="chart-note">Screenshots can reveal location through stations, routes, and transit context—even without GPS/EXIF.</div>
+					<div className="chart-note">Transit words, station names, routes can leak location indirectly.</div>
 				</div>
 			</div>
 		</div>
