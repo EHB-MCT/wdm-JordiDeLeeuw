@@ -1,3 +1,6 @@
+
+# TODO: This file has grown large (routes + OCR + analysis + admin-metrics helpers).
+# Later: split into modules (upload_routes, ocr_routes, analysis_routes, admin_metrics) for maintainability.
 from flask import Blueprint, request, jsonify, send_file
 from io import BytesIO
 import auth_backend
@@ -362,142 +365,6 @@ def validate_summary_only(data):
     ss = data.get("short_summary")
     return isinstance(ss, str) and len(ss.strip()) > 0
 
-def chunk_text(text, chunk_size=1000, overlap=150):
-    """Split text into chunks with overlap"""
-    if len(text) <= chunk_size:
-        return [text]
-    
-    chunks = []
-    start = 0
-    
-    while start < len(text):
-        end = min(start + chunk_size, len(text))
-        chunk = text[start:end]
-        
-        # If not the last chunk, try to break at word boundary
-        if end < len(text):
-            # Find last space before the end
-            last_space = chunk.rfind(' ')
-            if last_space > chunk_size - overlap - 50:  # Ensure we don't cut too much
-                chunk = chunk[:last_space]
-                end = start + last_space
-        
-        chunks.append(chunk)
-        
-        # Calculate next start with overlap - we should have moved past end-overlap
-        if end >= len(text):  # Last chunk
-            break
-            
-        # Move start forward, ensuring we make progress
-        start = end - overlap
-        
-        # Ensure we make forward progress
-        if start <= end - chunk_size:
-            start = end
-            
-        # Safety limit
-        if len(chunks) >= 10:  # realistic cap per photo
-            print(f"Warning: Chunking stopped at 10 chunks to prevent overload")
-            break
-    
-    return chunks
-
-def create_chunk_prompt(photo_info, chunk_text, chunk_index, total_chunks):
-    """Create prompt for analyzing a single text chunk"""
-    return f'''You are summarizing OCR text from a photo.
-
-Photo: {photo_info['filename']} (uploaded: {photo_info['uploaded_at']})
-
-INSTRUCTIONS:
-- Return ONLY valid JSON. No preamble. No explanation. No markdown.
-- Output must start with "{{" and end with "}}".
-- Keep short_summary natural human text, 1-3 sentences.
-
-Return this JSON structure:
-{{"short_summary": ""}}
-
-OCR text to summarize:
-{chunk_text}'''
-
-def merge_analysis_results(results_list):
-    """Merge multiple analysis results with deduplication"""
-    merged = {
-        "highlights": [],
-        "action_items": [],
-        "dates_deadlines": [],
-        "names_entities": [],
-        "numbers_amounts": [],
-        "key_takeaways": []
-    }
-    
-    # Helper to dedupe by key function
-    def dedupe_list(items, key_func=None):
-        seen = set()
-        unique = []
-        for item in items:
-            # Handle dictionary items for structured fields
-            if isinstance(item, dict):
-                key = key_func(item) if key_func else str(item)
-            else:
-                key = key_func(item) if key_func else item
-            if key not in seen:
-                seen.add(key)
-                unique.append(item)
-        return unique
-    
-    for result in results_list:
-        if not isinstance(result, dict):
-            continue
-            
-        # Merge and dedupe each field
-        merged["highlights"].extend(result.get("highlights", []))
-        merged["action_items"].extend(result.get("action_items", []))
-        merged["dates_deadlines"].extend(result.get("dates_deadlines", []))
-        merged["names_entities"].extend(result.get("names_entities", []))
-        merged["numbers_amounts"].extend(result.get("numbers_amounts", []))
-        merged["key_takeaways"].extend(result.get("key_takeaways", []))
-    
-    # Dedupe each field
-    merged["highlights"] = dedupe_list(merged["highlights"])
-    merged["action_items"] = dedupe_list(merged["action_items"])
-    merged["names_entities"] = dedupe_list(merged["names_entities"])
-    merged["key_takeaways"] = dedupe_list(merged["key_takeaways"])
-    
-    # Dedupe structured fields
-    merged["dates_deadlines"] = dedupe_list(
-        merged["dates_deadlines"], 
-        lambda x: f"{x.get('date', '')}|{x.get('context', '')}"
-    )
-    merged["numbers_amounts"] = dedupe_list(
-        merged["numbers_amounts"],
-        lambda x: f"{x.get('value', '')}|{x.get('context', '')}"
-    )
-    
-    return merged
-
-def create_photo_summary_prompt(photo_info, merged_analysis):
-    """Create final summary prompt for a photo using merged chunk results"""
-    highlights_text = "\n".join([f"- {h}" for h in merged_analysis.get("highlights", [])[:5]])
-    actions_text = "\n".join([f"- {a}" for a in merged_analysis.get("action_items", [])[:5]])
-    names_text = "\n".join([f"- {n}" for n in merged_analysis.get("names_entities", [])[:5]])
-    
-    prompt = f'''Create a concise summary (1-3 sentences) for photo "{photo_info['filename']}'" based on these extracted insights:
-
-Highlights:
-{highlights_text}
-
-Action Items:
-{actions_text}
-
-Names/Entities:
-{names_text}
-
-Return ONLY a JSON object with this structure:
-{{"short_summary": "Concise summary here"}}
-
-The summary should be natural human text, NOT JSON-like content.'''
-
-    return prompt
 
 def parse_llm_response(response, mode: str = "summary"):
     """Parse LLM response.
@@ -680,13 +547,33 @@ def build_admin_metrics_from_ocr(ocr_texts):
     aggr_compiled = [_compile_kw(w) for w in aggression_words]
     prof_compiled = [_compile_kw(w) for w in profanity_words]
 
-    aggr_hits = 0
-    prof_hits = 0
-    for line in lines:
-        if _line_has_any(line, aggr_compiled):
-            aggr_hits += 1
-        if _line_has_any(line, prof_compiled):
-            prof_hits += 1
+    def _count_any_occurrences(text: str, compiled_list, cap: int = 25) -> int:
+        """Count occurrences of any keyword/phrase across the whole text.
+        - regex items count matches
+        - string phrase items count substring occurrences
+        Capped to keep dashboards readable.
+        """
+        if not text:
+            return 0
+        total = 0
+        for item in compiled_list:
+            if not item:
+                continue
+            if isinstance(item, str):
+                # phrase substring occurrences (overlapping isn't important here)
+                total += text.count(item)
+            else:
+                try:
+                    total += len(item.findall(text))
+                except Exception:
+                    continue
+            if total >= cap:
+                return cap
+        return min(total, cap)
+
+    combined_low = combined.lower()
+    aggr_hits = _count_any_occurrences(combined_low, aggr_compiled, cap=25)
+    prof_hits = _count_any_occurrences(combined_low, prof_compiled, cap=25)
 
     metrics["professionalLiabilitySignals"][0]["count"] = aggr_hits
     metrics["professionalLiabilitySignals"][1]["count"] = prof_hits
@@ -717,17 +604,30 @@ def build_admin_metrics_from_ocr(ocr_texts):
 
     rel_compiled = [_compile_kw(w) for w in relationship_words]
 
-    rel_hits = 0
-    for line in lines:
-        if _line_has_any(line, rel_compiled):
-            rel_hits += 1
+    # Count DISTINCT relationship labels present (keeps signal stable even when OCR is flattened)
+    found_rel = set()
+    combined_low = combined.lower()
+    for item in rel_compiled:
+        if not item:
+            continue
+        if isinstance(item, str):
+            if item in combined_low:
+                found_rel.add(item)
+        else:
+            try:
+                if item.search(combined_low):
+                    found_rel.add(item.pattern)
+            except Exception:
+                continue
 
-    metrics["socialContextLeakage"]["relationshipLabels"] = rel_hits
+    # Cap lightly for dashboard readability
+    metrics["socialContextLeakage"]["relationshipLabels"] = min(len(found_rel), 15)
 
     # Name entities (fallback heuristic): count DISTINCT candidate spans (not perfect).
     # If the LLM-filtered persons are available, they will override this later.
     candidates = extract_name_candidates(ocr_texts, max_candidates=80)
-    metrics["socialContextLeakage"]["nameEntities"] = len(candidates)
+    # Keep this readable; LLM person-name filtering (when available) will override later during /analyze.
+    metrics["socialContextLeakage"]["nameEntities"] = min(len(candidates), 50)
 
     # Shouting hits: ALL CAPS tokens length>=4 or excessive !!
     caps_tokens_raw = re.findall(r"\b[A-Z]{4,}\b", combined)
