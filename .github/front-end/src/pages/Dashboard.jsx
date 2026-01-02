@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "./AuthContext";
-import "./styles/UserDashboard.css";
+import { useAuth } from "../context/AuthContext";
+import "../styles/UserDashboard.css";
 // OBOE_EDIT_TEST: connectivity check (write test 2)
 
 const API_BASE = "";

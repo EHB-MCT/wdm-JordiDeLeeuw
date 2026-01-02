@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "./AuthContext";
-import "./styles/Auth.css";
+import { useAuth } from "../context/AuthContext";
+import "../styles/Auth.css";
 
 const API_BASE = "";
 

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import "./styles/Shared.css";
+import "../styles/Shared.css";
 
 export function AccessDenied() {
 	const navigate = useNavigate();

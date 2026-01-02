@@ -1,10 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "./AuthContext";
-import { ProtectedRoute } from "./ProtectedRoute";
-import { AdminRoute } from "./AdminRoute";
-import { Login } from "./Login";
-import { Dashboard } from "./Dashboard";
-import { AdminDashboard } from "./AdminDashboard";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { ProtectedRoute } from "./components/routes/ProtectedRoute";
+import { AdminRoute } from "./components/routes/AdminRoute";
+import { Login } from "./pages/Login";
+import { Dashboard } from "./pages/Dashboard";
+import { AdminDashboard } from "./pages/AdminDashboard";
 import "./styles/Shared.css";
 
 function AppRoutes() {

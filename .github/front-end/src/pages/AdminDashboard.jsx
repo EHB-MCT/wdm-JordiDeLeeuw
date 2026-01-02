@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
-import { useAuth } from "./AuthContext";
+import { useAuth } from "../context/AuthContext";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import "./styles/AdminDashboard.css";
+import "../styles/AdminDashboard.css";
 
 const API_BASE = "";
 
