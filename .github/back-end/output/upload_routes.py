@@ -579,84 +579,166 @@ def build_admin_metrics_from_ocr(ocr_texts):
         metrics["locationLeakageSignals"][2]["count"] = 1
         return metrics
 
-    # Timestamp leakage (00-23h) from time-like patterns
-    # Examples we want to catch reliably:
-    # - 13:45, 9:01, 09:51
-    # - 13h45, 13 h 45, 13u45
-    # - 13:45:22
-    # OCR sometimes returns weird spacing, so we allow optional spaces.
-    time_pat = re.compile(
-        r"\b(?P<hour>[01]?\d|2[0-3])\s*(?:[:hHuU]\s*[0-5]\d)(?::\s*[0-5]\d)?\b"
-    )
-
-    for m in time_pat.finditer(combined):
-        try:
-            h = int(m.group("hour"))
-            metrics["timestampLeakage"][h]["count"] += 1
-        except Exception:
-            continue
-
-    # Also count standalone hour tokens like "11h" / "11u" that sometimes appear without minutes.
-    # We intentionally do NOT count bare numbers like "11" because that would explode false positives.
-    hour_only_pat = re.compile(r"\b(?P<hour>[01]?\d|2[0-3])\s*[hHuU]\b")
-    for m in hour_only_pat.finditer(combined):
-        try:
-            h = int(m.group("hour"))
-            metrics["timestampLeakage"][h]["count"] += 1
-        except Exception:
-            continue
+    # Timestamp leakage (deterministic)
+    metrics["timestampLeakage"] = extract_timestamp_leakage(ocr_texts)
 
     # Social context leakage
-    handle_pat = re.compile(r"@([A-Za-z0-9_]{2,})")
+    # Handles: avoid matching the @ inside emails by requiring the @ NOT be preceded by an email-local character.
+    handle_pat = re.compile(r"(?<![A-Za-z0-9._%+-])@([A-Za-z0-9_]{2,})\b")
     email_pat = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
-    phone_pat = re.compile(r"(?:\+?\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)?\d{3}[\s-]?\d{3,4}\b")
+
+    # Phones: extract digit-heavy patterns and count unique normalized numbers (keeps OCR spacing tolerant)
+    phone_pat = re.compile(r"(?:\+\s*\d{1,3}[\s./-]*)?(?:\(?\d{1,4}\)?[\s./-]*){2,5}\d{2,4}")
 
     metrics["socialContextLeakage"]["handles"] = len(handle_pat.findall(combined))
     metrics["socialContextLeakage"]["emails"] = len(email_pat.findall(combined))
-    metrics["socialContextLeakage"]["phonePatterns"] = len(phone_pat.findall(combined))
 
-    rel_words = [
-        "boyfriend", "girlfriend", "bf", "gf", "husband", "wife",
-        "mom", "mum", "mother", "dad", "father", "sister", "brother",
-        "friend", "bestie", "partner", "manager", "boss"
-    ]
-    rel_count = 0
-    low = combined.lower()
-    for w in rel_words:
-        rel_count += low.count(w)
-    metrics["socialContextLeakage"]["relationshipLabels"] = rel_count
+    # Count unique phone-like sequences by normalizing to digits and requiring a reasonable length
+    phones_found = []
+    for m in phone_pat.finditer(combined):
+        raw = m.group(0)
+        digits = re.sub(r"\D", "", raw)
+        # Typical minimum for a real phone is ~9 digits (BE mobiles are 9/10 without country code)
+        if len(digits) < 9:
+            continue
+        # Cap to avoid absurd OCR runs
+        if len(digits) > 16:
+            continue
+        phones_found.append(digits)
 
-    # Name entities (simple heuristic: capitalized words, excluding common starts)
-    # Not perfect, but stable for your admin graphs.
-    cap_pat = re.compile(r"\b[A-Z][a-z]{2,}\b")
-    caps = cap_pat.findall(combined)
-    stop = set(["I", "The", "A", "An", "And", "Or", "But", "To", "Of", "In", "On", "At", "For", "With"])
-    nameish = [c for c in caps if c not in stop]
-    metrics["socialContextLeakage"]["nameEntities"] = len(nameish)
+    metrics["socialContextLeakage"]["phonePatterns"] = len(set(phones_found))
 
-    # Professional liability signals
+    # --- Expanded aggression/profanity/relationship detection (multilingual, per-line, substring match, count once per line) ---
+    lines = [l.strip().lower() for l in combined.splitlines() if l.strip()]
+
+    # Helper: support keywords and simple stems ending with '*'
+    def _compile_kw(kw: str):
+        kw = (kw or "").strip().lower()
+        if not kw:
+            return None
+        # Phrase -> simple substring check later
+        if " " in kw:
+            return kw
+        # Stem wildcard at end: bedreig* -> \bbedreig\w*\b
+        if kw.endswith("*"):
+            base = re.escape(kw[:-1])
+            return re.compile(rf"\b{base}\w*\b")
+        # Normal token
+        token = re.escape(kw)
+        return re.compile(rf"\b{token}\b")
+
+    def _line_has_any(line: str, compiled_list):
+        for item in compiled_list:
+            if not item:
+                continue
+            if isinstance(item, str):
+                # phrase
+                if item in line:
+                    return True
+            else:
+                if item.search(line):
+                    return True
+        return False
+
     aggression_words = [
-        "kill", "hurt", "attack", "threat", "idiot", "stupid", "hate",
-        "destroy", "beat", "punch", "slap"
+        # EN (stems + phrases)
+        "threat*","attack*","hurt*","kill*","murder*","stab*","shoot*","punch*","slap*","beat*",
+        "strangle*","choke*","bash*","smash*","destroy*","burn*","explode*","violent","violence",
+        "i will kill","i'll kill","you will pay","watch out","i swear","i'm coming for you",
+
+        # NL
+        "bedreig*","dreig*","aanval*","aanvall*","slaan","sla","sloeg","geslagen",
+        "mepp*","klopp*","ramm*","beuk*","schopp*","trapp*","afmak*","doodmak*","dood*",
+        "vermoord*","neersteek*","steek*","schiet*","neerschiet*","kapotmaak*","verniel*",
+        "geweld","agress*","ik pak je","ik krijg je","je gaat eraan","ik maak je af","pas op",
+
+        # FR
+        "menac*","attaque*","frapp*","tap*","cogn*","gifl*",
+        "tuer","tué","tue","tuez","assassin*","poignard*","couteau",
+        "tir*","fusill*","étrangl*","étouff*","détru*",
+        "violence","violent","agress*","je vais te tuer","tu vas payer","tu vas voir","fais gaffe"
     ]
+
     profanity_words = [
-        "fuck", "shit", "bitch", "asshole", "damn", "cunt", "fucking"
+        # EN
+        "fuck","fucking","shit","bullshit","asshole","bitch","bastard","damn","goddamn",
+        "motherfucker","dick","douche","piss","crap","slut","whore","wanker","prick",
+        "jerk","moron","idiot","stupid","dumb","screw you","piece of shit",
+
+        # NL
+        "kut","kloot*","klote","klootzak","lul","eikel","zak","zakkenwasser",
+        "hoer","slet","neuk*","godverdomme","verdomme","sh*t","shit",
+        "kanker","tering","tyfus","mongool","idioot","debiel","achterlijk","sukkel",
+        "rot op","hou je bek","krijg de tering",
+
+        # FR
+        "putain","merde","bordel","con","connard","connasse","salope","pute",
+        "enculé","nique","ta gueule","abruti","imbécile","crétin","débile","salaud","bâtard",
+        "enfoiré","fils de pute","va te faire","casse-toi"
     ]
+
+    aggr_compiled = [_compile_kw(w) for w in aggression_words]
+    prof_compiled = [_compile_kw(w) for w in profanity_words]
 
     aggr_hits = 0
     prof_hits = 0
-    for w in aggression_words:
-        aggr_hits += low.count(w)
-    for w in profanity_words:
-        prof_hits += low.count(w)
-
-    # Shouting hits: ALL CAPS tokens length>=4 or excessive !!
-    caps_tokens = re.findall(r"\b[A-Z]{4,}\b", combined)
-    exclam = combined.count("!!")
-    shout_hits = len(caps_tokens) + exclam
+    for line in lines:
+        if _line_has_any(line, aggr_compiled):
+            aggr_hits += 1
+        if _line_has_any(line, prof_compiled):
+            prof_hits += 1
 
     metrics["professionalLiabilitySignals"][0]["count"] = aggr_hits
     metrics["professionalLiabilitySignals"][1]["count"] = prof_hits
+
+    # --- Relationship label detection (expanded multilingual, per-line, substring match, count once per line) ---
+    # === Relationship labels (EN + NL + FR) ===
+    relationship_words = [
+        # EN
+        "friend","friends","best friend","bestie","buddy","pal","mate",
+        "boyfriend","girlfriend","partner","husband","wife","fiancé","fiancee","spouse",
+        "ex","my ex","family","mom","mother","dad","father","brother","sister","cousin",
+        "aunt","uncle","grandma","grandpa","roommate","neighbour","neighbor",
+        "boss","manager","supervisor","colleague","coworker","team lead","teacher","student",
+
+        # NL
+        "vriend","vriendin","vrienden","beste vriend","beste vriendin","bestie","maat","makker",
+        "partner","relatie","vriendje","vriendinnetje","man","vrouw","echtgenoot","echtgenote",
+        "verloofde","ex","familie","mama","moeder","papa","vader","broer","zus","neef","nicht",
+        "oom","tante","collega","baas","manager","teamleider","leerkracht","leraar","docent","student",
+        "huisgenoot","kamergenoot","buur","buurman","buurvrouw",
+
+        # FR
+        "ami","amie","amis","meilleur ami","meilleure amie","pote","copain","copine","partenaire",
+        "mari","femme","époux","épouse","fiancé","fiancée","ex","famille","maman","mère","papa","père",
+        "frère","sœur","cousin","cousine","oncle","tante","collègue","chef","manager","superviseur",
+        "prof","enseignant","étudiant","voisin","voisine","coloc","colocation"
+    ]
+
+    rel_compiled = [_compile_kw(w) for w in relationship_words]
+
+    rel_hits = 0
+    for line in lines:
+        if _line_has_any(line, rel_compiled):
+            rel_hits += 1
+
+    metrics["socialContextLeakage"]["relationshipLabels"] = rel_hits
+
+    # Name entities (fallback heuristic): count DISTINCT candidate spans (not perfect).
+    # If the LLM-filtered persons are available, they will override this later.
+    candidates = extract_name_candidates(ocr_texts, max_candidates=80)
+    metrics["socialContextLeakage"]["nameEntities"] = len(candidates)
+
+    # Shouting hits: ALL CAPS tokens length>=4 or excessive !!
+    caps_tokens_raw = re.findall(r"\b[A-Z]{4,}\b", combined)
+    caps_ignore = set([
+        "BRUSSEL","BRUSSELS","CENTRAAL","CENTRAL","AIRPORT","ZAVENTEM","MIDI","ZUID",
+        "IC","NMBS","SNCB","PLATFORM","TRAIN","TICKET","GATE","JOURNEY","DETAILS","ON","TIME",
+        "MALINES","MECHELEN","ANVERS","ANTWERPEN","LIEGE","LUIK"
+    ])
+    caps_tokens = [t for t in caps_tokens_raw if t not in caps_ignore]
+    exclam = combined.count("!!")
+    shout_hits = len(caps_tokens) + exclam
     metrics["professionalLiabilitySignals"][2]["count"] = shout_hits
 
     # Location leakage
@@ -670,6 +752,7 @@ def build_admin_metrics_from_ocr(ocr_texts):
         "departure", "arrival", "destination"
     ]
 
+    low = combined.lower()
     loc_count = 0
     trav_count = 0
     for w in location_keywords:
@@ -685,6 +768,158 @@ def build_admin_metrics_from_ocr(ocr_texts):
         metrics["locationLeakageSignals"][2]["count"] = 0
 
     return metrics
+
+# === New helper functions for admin metrics and final resultJson ===
+
+def extract_timestamp_leakage(ocr_texts):
+    """Deterministically count time-like strings and bucket them per hour (00-23)."""
+    import re
+    buckets = [{"hour": i, "count": 0} for i in range(24)]
+    combined = "\n".join([t for t in ocr_texts if isinstance(t, str) and t.strip()])
+    if not combined.strip():
+        return buckets
+
+    # Matches: 9:01, 09:51, 13:45, 13:45:22, 13h45, 13 h 45, 13u45
+    time_pat = re.compile(r"\b(?P<hour>[01]?\d|2[0-3])\s*(?:[:hHuU]\s*[0-5]\d)(?::\s*[0-5]\d)?\b")
+    for m in time_pat.finditer(combined):
+        try:
+            h = int(m.group("hour"))
+            buckets[h]["count"] += 1
+        except Exception:
+            continue
+
+    # Matches: 11h or 11u (hour only) WITHOUT minutes
+    hour_only_pat = re.compile(r"\b(?P<hour>[01]?\d|2[0-3])\s*[hHuU]\b")
+    for m in hour_only_pat.finditer(combined):
+        try:
+            h = int(m.group("hour"))
+            buckets[h]["count"] += 1
+        except Exception:
+            continue
+
+    return buckets
+
+
+def extract_name_candidates(ocr_texts, max_candidates: int = 80):
+    """Extract candidate name-like spans from OCR deterministically.
+    We will later let the LLM FILTER which ones are real PERSON names.
+    """
+    import re
+
+    combined = "\n".join([t for t in ocr_texts if isinstance(t, str) and t.strip()])
+    if not combined.strip():
+        return []
+
+    # Capture short sequences of TitleCase / ALLCAPS words that could form a name.
+    # Examples: "DE LEEUW Jordi", "MAEYAERT Ann-Sophie", "Sandra Stordeur"
+    pat = re.compile(r"\b(?:[A-Z]{2,}|[A-Z][a-z]+)(?:[-'’][A-Z][a-z]+)?(?:\s+(?:[A-Z]{2,}|[A-Z][a-z]+)(?:[-'’][A-Z][a-z]+)?){0,2}\b")
+
+    ui_stop = set([
+        "Chat", "Teams", "Assignments", "Calendar", "More", "Recent", "Unread",
+        "Mentions", "Favorites", "Chats", "Activity", "You", "Journey", "Ticket",
+        "Train", "Platform", "Details", "Intermediate", "stop", "stops", "On", "Time"
+    ])
+
+    seen = set()
+    out = []
+    for m in pat.finditer(combined):
+        cand = m.group(0).strip()
+        if len(cand) < 3:
+            continue
+        if cand in ui_stop:
+            continue
+        # Avoid obvious non-names
+        if any(ch.isdigit() for ch in cand):
+            continue
+        # Avoid long shouty tokens like station names in all caps with hyphens (still allow some)
+        if len(cand) > 40:
+            continue
+        key = cand.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(cand)
+        if len(out) >= max_candidates:
+            break
+
+    return out
+
+
+def llm_filter_person_names(candidates, ocr_texts, model: str = "llama3"):
+    """Use LLM to filter candidate spans down to REAL PERSON NAMES only.
+    Returns a list of distinct person names.
+    """
+    import json
+
+    if not candidates:
+        return []
+
+    # Provide a small OCR snippet for grounding (avoid huge prompt)
+    combined = "\n".join([t for t in ocr_texts if isinstance(t, str) and t.strip()])
+    if len(combined) > 3500:
+        combined = combined[:3500]
+
+    prompt = f'''You are helping filter OCR-extracted candidate "names".
+
+Task:
+- From the candidate list, return ONLY real PERSON names (first/last names), in a JSON object.
+- Exclude: stations/places, UI labels, train codes (IC), platforms, dates/times, generic words.
+- Keep names as they appear.
+- Deduplicate.
+
+Return ONLY valid JSON with this shape:
+{{"persons": ["Name 1", "Name 2"]}}
+
+Candidates:
+{json.dumps(candidates, ensure_ascii=False)}
+
+OCR context (for disambiguation):
+{combined}
+'''
+
+    try:
+        resp = auth_backend.query_ollama(prompt, model)
+    except Exception as e:
+        print(f"LLM person-name filter error: {e}")
+        return []
+
+    if not resp or not resp.strip():
+        return []
+
+    clean = resp.strip()
+    try:
+        obj = json.loads(clean)
+    except Exception:
+        # Try extracting JSON between braces
+        first = clean.find('{')
+        last = clean.rfind('}')
+        if first == -1 or last == -1 or last <= first:
+            return []
+        try:
+            obj = json.loads(clean[first:last+1])
+        except Exception:
+            return []
+
+    persons = obj.get("persons") if isinstance(obj, dict) else None
+    if not isinstance(persons, list):
+        return []
+
+    # Normalize + dedupe
+    out = []
+    seen = set()
+    for p in persons:
+        if not isinstance(p, str):
+            continue
+        name = p.strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(name)
+
+    return out
 
 
 def build_final_result_json(short_summary: str, admin_metrics: dict):
@@ -775,6 +1010,15 @@ def analyze_photos():
         # Deterministic admin metrics (matches AdminDashboard expected shape)
         admin_metrics = build_admin_metrics_from_ocr(ocr_texts)
 
+        # Improve nameEntities using LLM filtering (stable counts via deduped PERSON names)
+        try:
+            name_candidates = extract_name_candidates(ocr_texts, max_candidates=80)
+            persons = llm_filter_person_names(name_candidates, ocr_texts, model="llama3")
+            if persons:
+                admin_metrics["socialContextLeakage"]["nameEntities"] = len(persons)
+        except Exception as e:
+            print(f"NameEntities LLM override failed: {e}")
+
         # LLM summary (ONLY user short summary)
         combined_text = "\n\n".join(ocr_texts)
         # Safety: do not send extremely large prompts
@@ -818,16 +1062,20 @@ def analyze_photos():
         if name_matches:
             hints_block += f"Detected names/entities: {', '.join(name_matches)}\n"
 
+        # Summary sentence count scales with number of photos (3 sentences per photo), with sensible caps
+        photos_n = max(1, len(per_photo_results))
+        target_sentences = max(4, min(photos_n * 3, 18))
+
         summary_prompt = f'''You summarize OCR text from multiple screenshots for an end-user.
 
 INSTRUCTIONS:
 - Return ONLY valid JSON. No preamble. No explanation. No markdown.
 - Output must start with "{{" and end with "}}".
 - short_summary must be useful, specific, and not generic.
-- Write 4-6 sentences.
+- Write EXACTLY {target_sentences} sentences.
 - Mention what kind of content it looks like (e.g., chat list, email, receipt, schedule).
 - If the text contains names/times, include a few examples.
-- If the text suggests privacy-sensitive content, mention that briefly.
+- If the text suggests privacy-sensitive content (names, tickets, travel details, timestamps), mention that briefly and factually.
 
 Return this JSON structure:
 {{"short_summary": ""}}
@@ -943,7 +1191,7 @@ def get_summary():
         return jsonify({
             "summary": summary.get("shortSummary", ""),
             "details": summary.get("resultJson", {}),
-            "createdAt": summary.get("createdAt"),
+            "createdAt": summary.get("createdAt").isoformat() if summary.get("createdAt") else None,
             "analyzedPhotos": len(summary.get("sourcePhotoIds", []))
         }), 200
 
