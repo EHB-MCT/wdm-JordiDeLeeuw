@@ -20,7 +20,7 @@ body,
 	background: var(--bg);
 }
 
-/* NOTE: JSX uses <div className="dashboard"> so we must style .dashboard (not only .dashboard.page) */
+/* Admin page wrapper */
 .dashboard,
 .dashboard.page {
 	min-height: 100vh;
@@ -32,6 +32,7 @@ body,
 	box-sizing: border-box;
 }
 
+/* Top bar */
 .admin-nav {
 	display: grid;
 	grid-template-columns: 1fr auto 1fr;
@@ -78,6 +79,20 @@ body,
 	gap: 10px;
 }
 
+/* Buttons */
+.logout-btn {
+	font-size: 12px;
+	padding: 10px 12px;
+	border-radius: 12px;
+	border: 1px solid var(--border);
+	background: rgba(255, 255, 255, 0.9);
+	color: var(--text);
+	cursor: pointer;
+}
+.logout-btn:hover {
+	background: rgba(255, 255, 255, 1);
+}
+
 .pill {
 	font-size: 12px;
 	padding: 6px 10px;
@@ -92,7 +107,6 @@ body,
 	color: rgba(8, 145, 178, 0.95);
 	border-color: rgba(34, 211, 238, 0.35);
 }
-
 .pill.demo {
 	background: rgba(167, 139, 250, 0.14);
 	color: rgba(109, 40, 217, 0.9);
@@ -117,26 +131,12 @@ body,
 	color: var(--muted);
 	cursor: pointer;
 }
-
 .mode-toggle.active {
 	background: rgba(15, 23, 42, 0.08);
 	color: var(--text);
 }
 
-.logout-btn {
-	font-size: 12px;
-	padding: 10px 12px;
-	border-radius: 12px;
-	border: 1px solid var(--border);
-	background: rgba(255, 255, 255, 0.9);
-	color: var(--text);
-	cursor: pointer;
-}
-
-.logout-btn:hover {
-	background: rgba(255, 255, 255, 1);
-}
-
+/* Summary strip */
 .admin-summary {
 	margin-top: 12px;
 	padding: 12px 16px;
@@ -147,6 +147,7 @@ body,
 	font-size: 13px;
 }
 
+/* Grid */
 .charts-grid {
 	margin-top: 14px;
 	display: grid;
@@ -174,32 +175,21 @@ body,
 	letter-spacing: 0.2px;
 	color: black;
 }
-
 .chart-subtitle {
 	margin-top: 6px;
 	font-size: 12px;
 	color: var(--muted);
 }
 
-.card-head {
-	display: flex;
-	align-items: flex-start;
-	justify-content: space-between;
-	gap: 12px;
-	margin-bottom: 10px;
-}
-
 .chart-container {
-	flex: 1;
-	min-height: 280px;
+	flex: 0 0 auto;
+	height: 30vh;
+	min-height: 240px;
+	max-height: 340px;
 	border-radius: 12px;
 	padding: 10px 10px 0;
 	background: rgba(15, 23, 42, 0.02);
 	border: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.chart-container.tall {
-	min-height: 320px;
 }
 
 .chart-note {
@@ -218,66 +208,17 @@ body,
 	font-size: 12px;
 	line-height: 1.35;
 }
-
 .definition-box strong {
 	color: var(--text);
 }
 
-.def-row {
-	display: grid;
-	grid-template-columns: 140px 1fr;
-	gap: 10px;
-	margin-top: 8px;
-}
-
-.status-panel {
-	margin-top: 14px;
-	background: var(--panel);
-	border: 1px solid var(--border);
-	border-radius: var(--radius);
-	box-shadow: var(--shadow);
-	padding: 16px;
-}
-
-.status-panel.error {
-	border-color: rgba(239, 68, 68, 0.35);
-	background: rgba(239, 68, 68, 0.08);
-}
-
-.status-title {
-	font-size: 14px;
-	font-weight: 600;
-	margin-bottom: 6px;
-}
-
-.status-subtitle {
-	font-size: 12px;
-	color: var(--muted);
-}
-
-.status-hint {
-	margin-top: 10px;
-	font-size: 12px;
-	color: var(--muted2);
-}
-
-.status-hint code {
-	background: rgba(15, 23, 42, 0.06);
-	padding: 2px 6px;
-	border-radius: 8px;
-	border: 1px solid rgba(15, 23, 42, 0.1);
-	color: var(--text);
-}
-
-/* Recharts text rendering improvements */
+/* Recharts readability */
 .recharts-cartesian-axis-tick-value {
 	fill: rgba(15, 23, 42, 0.75);
 }
-
 .recharts-legend-item-text {
 	color: rgba(15, 23, 42, 0.72) !important;
 }
-
 .recharts-tooltip-wrapper {
 	outline: none;
 }

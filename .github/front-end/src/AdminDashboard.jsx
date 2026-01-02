@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "./AuthContext";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import "./AdminDashboard.css";
+import "./styles/AdminDashboard.css";
 
 const API_BASE = "";
 
@@ -31,6 +31,13 @@ const demoData = {
 	],
 };
 
+const chartColors = {
+	timestamp: "#38bdf8",
+	social: "#a78bfa",
+	liability: "#f59e0b",
+	location: "#22c55e",
+};
+
 function prettyLabel(key) {
 	return key
 		.replace(/([A-Z])/g, " $1")
@@ -55,7 +62,7 @@ export function AdminDashboard() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
 	const [isVerifiedAdmin, setIsVerifiedAdmin] = useState(false);
-	const [useLiveMode, setUseLiveMode] = useState(false);
+	const [useLiveMode, setUseLiveMode] = useState(true);
 
 	useEffect(() => {
 		if (user) verifyAdminAndFetchStats();
@@ -159,6 +166,9 @@ export function AdminDashboard() {
 	const locationLeakageData = useMemo(() => {
 		return safeSignals(dataSource?.locationLeakageSignals, demoData.locationLeakageSignals);
 	}, [dataSource]);
+
+	const chartMargin = { top: 12, right: 16, left: 8, bottom: 48 };
+	const xAxisCommon = { height: 48, tick: { fontSize: 11 } };
 
 	const modeLabel = useLiveMode ? "Live" : "Demo";
 
@@ -319,13 +329,13 @@ export function AdminDashboard() {
 
 					<div className="chart-container tall">
 						<ResponsiveContainer width="100%" height="100%">
-							<BarChart data={timestampHeatmapData} margin={{ top: 12, right: 16, left: 8, bottom: 12 }}>
+							<BarChart data={timestampHeatmapData} margin={chartMargin}>
 								<CartesianGrid strokeDasharray="2 3" />
-								<XAxis dataKey="hour" tick={{ fontSize: 12 }} />
+								<XAxis dataKey="hour" {...xAxisCommon} />
 								<YAxis tick={{ fontSize: 12 }} />
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="count" />
+								<Bar dataKey="count" fill={chartColors.timestamp} radius={[8, 8, 0, 0]} />
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
@@ -343,13 +353,13 @@ export function AdminDashboard() {
 
 					<div className="chart-container">
 						<ResponsiveContainer width="100%" height="100%">
-							<BarChart data={socialContextData} margin={{ top: 12, right: 16, left: 8, bottom: 56 }}>
+							<BarChart data={socialContextData} margin={chartMargin}>
 								<CartesianGrid strokeDasharray="2 3" />
-								<XAxis dataKey="category" tick={{ fontSize: 11 }} interval={0} angle={-18} textAnchor="end" height={60} />
+								<XAxis dataKey="category" {...xAxisCommon} interval={0} angle={-18} textAnchor="end" />
 								<YAxis tick={{ fontSize: 12 }} />
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="count" />
+								<Bar dataKey="count" fill={chartColors.social} radius={[8, 8, 0, 0]} />
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
@@ -367,13 +377,13 @@ export function AdminDashboard() {
 
 					<div className="chart-container">
 						<ResponsiveContainer width="100%" height="100%">
-							<BarChart data={liabilitySignalsData} margin={{ top: 12, right: 16, left: 8, bottom: 12 }}>
+							<BarChart data={liabilitySignalsData} margin={chartMargin}>
 								<CartesianGrid strokeDasharray="2 3" />
-								<XAxis dataKey="name" tick={{ fontSize: 11 }} />
+								<XAxis dataKey="name" {...xAxisCommon} />
 								<YAxis tick={{ fontSize: 12 }} />
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="count" />
+								<Bar dataKey="count" fill={chartColors.liability} radius={[8, 8, 0, 0]} />
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
@@ -407,13 +417,13 @@ export function AdminDashboard() {
 
 					<div className="chart-container">
 						<ResponsiveContainer width="100%" height="100%">
-							<BarChart data={locationLeakageData} margin={{ top: 12, right: 16, left: 8, bottom: 12 }}>
+							<BarChart data={locationLeakageData} margin={chartMargin}>
 								<CartesianGrid strokeDasharray="2 3" />
-								<XAxis dataKey="name" tick={{ fontSize: 11 }} />
+								<XAxis dataKey="name" {...xAxisCommon} />
 								<YAxis tick={{ fontSize: 12 }} />
 								<Tooltip />
 								<Legend />
-								<Bar dataKey="count" />
+								<Bar dataKey="count" fill={chartColors.location} radius={[8, 8, 0, 0]} />
 							</BarChart>
 						</ResponsiveContainer>
 					</div>

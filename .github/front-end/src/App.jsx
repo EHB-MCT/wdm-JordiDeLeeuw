@@ -5,7 +5,7 @@ import { AdminRoute } from "./AdminRoute";
 import { Login } from "./Login";
 import { Dashboard } from "./Dashboard";
 import { AdminDashboard } from "./AdminDashboard";
-import "./App.css";
+import "./styles/Shared.css";
 
 function AppRoutes() {
 	const { user } = useAuth();

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
-import "./Dashboard.css";
+import "./styles/UserDashboard.css";
 // OBOE_EDIT_TEST: connectivity check (write test 2)
 
 const API_BASE = "";
@@ -140,7 +140,7 @@ export function Dashboard() {
 		e.preventDefault();
 
 		if (files.length === 0) {
-			setResponse({ success: false, data: { error: "Selecteer minstens één bestand" } });
+			setResponse({ success: false, data: { error: "Select at least one file" } });
 			return;
 		}
 
@@ -307,7 +307,7 @@ export function Dashboard() {
 	};
 
 	const handleClearAll = async () => {
-		const confirmed = window.confirm("Weet je zeker dat je alle geüploade foto's wilt verwijderen?");
+		const confirmed = window.confirm("Are you sure you want to delete all uploaded photos?");
 		if (!confirmed) return;
 
 		try {
@@ -332,10 +332,10 @@ export function Dashboard() {
 				setAnalysisCounters({ photos_found: 0, photos_started: 0, photos_completed: 0, photos_failed: 0, photos_fallback: 0, photos_queued: 0 });
 			} else {
 				const data = await res.json();
-				alert(`Fout bij verwijderen: ${data.error || "Onbekende fout"}`);
+				alert(`Delete failed: ${data.error || "Unknown error"}`);
 			}
 		} catch (error) {
-			alert(`Netwerkfout: ${error.message}`);
+			alert(`Network error: ${error.message}`);
 		}
 	};
 
@@ -359,17 +359,17 @@ export function Dashboard() {
 	const getStatusLabel = (status) => {
 		switch (status) {
 			case "done":
-				return "✓ Klaar";
+				return "✓ Done";
 			case "error":
-				return "✗ Fout";
+				return "✗ Error";
 			case "processing":
-				return "⏳ Verwerken...";
+				return "⏳ Processing...";
 			case "extracting":
-				return "🔍 Tekst extraheren...";
+				return "🔍 Extracting text...";
 			case "received":
-				return "📨 Ontvangen";
+				return "📨 Received";
 			default:
-				return "📤 Geüpload";
+				return "📤 Uploaded";
 		}
 	};
 
@@ -473,7 +473,6 @@ export function Dashboard() {
 				return "analysis-status unknown";
 		}
 	};
-
 
 	const startAnalysisPolling = () => {
 		console.log("Starting analysis progress polling");
@@ -585,12 +584,12 @@ export function Dashboard() {
 				} else if (res.status === 400) {
 					// More specific error for no photos
 					if (data.error && data.error.includes("No photos with completed OCR")) {
-						alert("No photos with extracted text found. Please make sure photos have been processed (Next button) before analyzing.");
+						alert("No photos with extracted text found. Please make sure photos have been processed (Extract button) before analyzing.");
 					} else {
-						alert(`Analyse mislukt: ${data.error || "Onbekende fout"}`);
+						alert(`Analysis failed: ${data.error || "Unknown error"}`);
 					}
 				} else {
-					alert(`Analyse mislukt: ${data.error || "Onbekende fout"}`);
+					alert(`Analysis failed: ${data.error || "Unknown error"}`);
 				}
 			}
 		} catch (error) {
@@ -598,7 +597,7 @@ export function Dashboard() {
 			setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: "error" });
 			stopAnalysisPolling();
 			setShowAnalysisModal(false);
-			alert(`Netwerkfout: ${error.message}`);
+			alert(`Network error: ${error.message}`);
 		} finally {
 			setAnalyzing(false);
 		}
@@ -617,10 +616,7 @@ export function Dashboard() {
 	const analysisFound = Number(analysisCounters?.photos_found || 0);
 	const analysisTotalForUi = analysisFound || analysisStarted || (Array.isArray(analysisDetails) ? analysisDetails.length : 0) || 0;
 
-	const analysisProcessedForUi =
-		Number(analysisCounters?.photos_completed || 0) +
-		Number(analysisCounters?.photos_failed || 0) +
-		Number(analysisCounters?.photos_fallback || 0);
+	const analysisProcessedForUi = Number(analysisCounters?.photos_completed || 0) + Number(analysisCounters?.photos_failed || 0) + Number(analysisCounters?.photos_fallback || 0);
 
 	const analysisPctForUi = getAnalysisProgressPercentage();
 
@@ -629,7 +625,7 @@ export function Dashboard() {
 			{showProcessingModal && (
 				<div className="processing-modal-overlay">
 					<div className="processing-modal">
-						<h2>Foto&apos;s verwerken</h2>
+						<h2>Processing photos</h2>
 						<div className="progress-container">
 							<div className="progress-bar">
 								<div className="progress-fill" style={{ width: `${getProgressPercentage()}%` }}></div>
@@ -640,7 +636,7 @@ export function Dashboard() {
 							{processingStatus.map((photo, index) => (
 								<div key={photo.id} className="processing-status-item">
 									<span className="status-filename">
-										Foto {index + 1}: {photo.originalFilename}
+										Photo {index + 1}: {photo.originalFilename}
 									</span>
 									<span className={getStatusBadgeClass(photo.status)}>{getStatusLabel(photo.status)}</span>
 								</div>
@@ -653,7 +649,7 @@ export function Dashboard() {
 			{showAnalysisModal && (
 				<div className="processing-modal-overlay">
 					<div className="processing-modal">
-						<h2>Analyse uitvoeren</h2>
+						<h2>Run analysis</h2>
 
 						<div className="progress-container">
 							<div className="progress-bar">
@@ -662,63 +658,55 @@ export function Dashboard() {
 							<div className="progress-text">{getAnalysisProgressPercentage()}%</div>
 						</div>
 
+						<div className="processing-modal-note">Analysis may take time. Progress is shown per photo below.</div>
+
 						<div style={{ marginTop: "0.5rem", fontSize: "0.9rem", color: "#bbb" }}>
-	{(() => {
-		const started = Number(analysisCounters?.photos_started || 0);
-		const found = Number(analysisCounters?.photos_found || 0);
-		const completed = Number(analysisCounters?.photos_completed || 0);
-		const failed = Number(analysisCounters?.photos_failed || 0);
-		const fallback = Number(analysisCounters?.photos_fallback || 0);
+							{(() => {
+								const started = Number(analysisCounters?.photos_started || 0);
+								const found = Number(analysisCounters?.photos_found || 0);
+								const completed = Number(analysisCounters?.photos_completed || 0);
+								const failed = Number(analysisCounters?.photos_failed || 0);
+								const fallback = Number(analysisCounters?.photos_fallback || 0);
 
-		const processedFromCounters = completed + failed + fallback;
+								const processedFromCounters = completed + failed + fallback;
 
-		// Prefer per-photo statuses for the UI (more accurate in real time)
-		const list = Array.isArray(analysisDetails) ? analysisDetails : [];
-		const statuses = list.map((p) => p?.analysisStatus).filter(Boolean);
+								// Prefer per-photo statuses for the UI (more accurate in real time)
+								const list = Array.isArray(analysisDetails) ? analysisDetails : [];
+								const statuses = list.map((p) => p?.analysisStatus).filter(Boolean);
 
-		const total = list.length > 0 ? list.length : started || found || 0;
-		if (!total) return "Starting…";
+								const total = list.length > 0 ? list.length : started || found || 0;
+								if (!total) return "Starting…";
 
-		const doneCountFromStatuses = statuses.filter((s) => ["completed", "fallback_used", "llm_failed", "error"].includes(s)).length;
-		const inProgressCountFromStatuses = statuses.filter((s) => ["queued", "processing", "sent_to_llm", "finalizing"].includes(s)).length;
+								const doneCountFromStatuses = statuses.filter((s) => ["completed", "fallback_used", "llm_failed", "error"].includes(s)).length;
+								const inProgressCountFromStatuses = statuses.filter((s) => ["queued", "processing", "sent_to_llm", "finalizing"].includes(s)).length;
 
-		// If we have statuses, use them. Otherwise fall back to counters.
-		const doneCount = statuses.length ? doneCountFromStatuses : processedFromCounters;
-		const activeCount = statuses.length ? doneCountFromStatuses + inProgressCountFromStatuses : processedFromCounters;
+								// If we have statuses, use them. Otherwise fall back to counters.
+								const doneCount = statuses.length ? doneCountFromStatuses : processedFromCounters;
+								const activeCount = statuses.length ? doneCountFromStatuses + inProgressCountFromStatuses : processedFromCounters;
 
-		const hasFinalizing = analysisProgress.status === "finalizing" || statuses.includes("finalizing") || (started > 0 && processedFromCounters >= started);
+								const hasFinalizing = analysisProgress.status === "finalizing" || statuses.includes("finalizing") || (started > 0 && processedFromCounters >= started);
 
-		const phase = hasFinalizing
-			? "Finalizing"
-			: statuses.includes("sent_to_llm")
-			? "Sent to LLM"
-			: statuses.includes("processing")
-			? "Processing"
-			: statuses.includes("queued")
-			? "Queued"
-			: started > 0
-			? "Processing"
-			: "Starting";
+								const phase = hasFinalizing ? "Finalizing" : statuses.includes("sent_to_llm") ? "Sent to LLM" : statuses.includes("processing") ? "Processing" : statuses.includes("queued") ? "Queued" : started > 0 ? "Processing" : "Starting";
 
-		if (hasFinalizing) {
-			return `Finalizing result… (${activeCount}/${total})`;
-		}
+								if (hasFinalizing) {
+									return `Finalizing result… (${activeCount}/${total})`;
+								}
 
-		return `${phase} • ${activeCount}/${total} • done: ${completed} • fallback: ${fallback} • failed: ${failed}`;
-	})()}
-</div>
+								return `${phase} • ${activeCount}/${total} • done: ${completed} • fallback: ${fallback} • failed: ${failed}`;
+							})()}
+						</div>
 
 						<div className="processing-status-list" style={{ marginTop: "1rem" }}>
-{(analysisDetails || []).map((photo, index) => (
-	<div key={photo.id || index} className="processing-status-item">
-		<span className="status-filename">
-			Foto {index + 1}: {photo.filename || `Photo ${index + 1}`}
-		</span>
-		<span className={getAnalysisStatusClass(photo.analysisStatus)}>{getAnalysisStatusLabel(photo.analysisStatus)}</span>
-	</div>
-))}
-{(!analysisDetails || analysisDetails.length === 0) && <div style={{ color: "#888", fontSize: "0.9rem" }}>Waiting for analysis progress…</div>}
-</div>
+							{(analysisDetails || []).map((photo, index) => (
+								<div key={photo.id || index} className="processing-status-item">
+									<span className="status-filename">
+										Photo {index + 1}: {photo.filename || `Photo ${index + 1}`}
+									</span>
+									<span className={getAnalysisStatusClass(photo.analysisStatus)}>{getAnalysisStatusLabel(photo.analysisStatus)}</span>
+								</div>
+							))}
+							{(!analysisDetails || analysisDetails.length === 0) && <div style={{ color: "#888", fontSize: "0.9rem" }}>Waiting for analysis progress…</div>}
+						</div>
 					</div>
 				</div>
 			)}
@@ -740,138 +728,139 @@ export function Dashboard() {
 				</div>
 			</div>
 
-			<div className="upload-card">
-				<h2>Upload afbeeldingen</h2>
-				<form onSubmit={handleUpload} className="upload-form">
-					<label className="file-input-label">
-						<input id="file-input" type="file" multiple accept="image/*" onChange={handleFileChange} className="file-input" />
-						<span className="file-input-text">{files.length > 0 ? `${files.length} bestand(en) geselecteerd` : "Kies bestanden"}</span>
-					</label>
+			<div className="dashboard-columns">
+				<div className="upload-card">
+					<h2>Upload images</h2>
+					<form onSubmit={handleUpload} className="upload-form">
+						<label className="file-input-label">
+							<input id="file-input" type="file" multiple accept="image/*" onChange={handleFileChange} className="file-input" />
+							<span className="file-input-text">{files.length > 0 ? `${files.length} file(s) selected` : "Choose files"}</span>
+						</label>
 
-					{files.length > 0 && (
-						<div className="file-list">
-							{files.map((file, index) => (
-								<div key={index} className="file-item">
-									📄 {file.name}
+						{files.length > 0 && (
+							<div className="file-list">
+								{files.map((file, index) => (
+									<div key={index} className="file-item">
+										📄 {file.name}
+									</div>
+								))}
+							</div>
+						)}
+
+						<label className="location-optin-label">
+							<input type="checkbox" checked={locationOptIn} onChange={(e) => setLocationOptIn(e.target.checked)} className="location-optin-checkbox" />
+							<span>Include GPS location data (if available in photos)</span>
+						</label>
+
+						<button type="submit" className="upload-btn" disabled={uploading || files.length === 0}>
+							{uploading ? "Uploading..." : "Upload"}
+						</button>
+					</form>
+
+					{response && !response.success && (
+						<div className="response-box error">
+							<h3>Error</h3>
+							<pre>{JSON.stringify(response.data, null, 2)}</pre>
+						</div>
+					)}
+				</div>
+
+				<div className="photos-section">
+					<h2>Your photos ({photos.length})</h2>
+					{loadingPhotos ? (
+						<div className="loading-photos">Loading...</div>
+					) : photos.length === 0 ? (
+						<div className="no-photos">No photos uploaded yet</div>
+					) : (
+						<div className="photos-grid">
+							{photos.map((photo) => (
+								<div key={photo.id} className="photo-card">
+									{imageUrls[photo.id] ? <img src={imageUrls[photo.id]} alt={photo.filename} className="photo-thumbnail" /> : <div className="photo-thumbnail-loading">Laden...</div>}
+									<div className="photo-info">
+										<div className="photo-filename">{photo.originalFilename}</div>
+										<div className="photo-size">{(photo.size / 1024).toFixed(1)} KB</div>
+										<div className={getStatusBadgeClass(photo.status)}>{getStatusLabel(photo.status)}</div>
+										{photo.errorMessage && (
+											<div className="photo-error-message">
+												<strong>Error:</strong> {photo.errorMessage}
+											</div>
+										)}
+									</div>
 								</div>
 							))}
 						</div>
 					)}
 
-					<label className="location-optin-label">
-						<input type="checkbox" checked={locationOptIn} onChange={(e) => setLocationOptIn(e.target.checked)} className="location-optin-checkbox" />
-						<span>Include GPS location data (if available in photos)</span>
-					</label>
+					<div className="photos-actions">
+						<button className="next-btn" onClick={handleProcessAll} disabled={processing || photos.length === 0}>
+							{processing ? "Extracting..." : "Extract"}
+						</button>
 
-					<button type="submit" className="upload-btn" disabled={uploading || files.length === 0}>
-						{uploading ? "Uploaden..." : "Upload"}
-					</button>
-				</form>
+						<button className="analyze-btn" onClick={handleAnalyze} disabled={analyzing || !canAnalyze}>
+							{analyzing ? (
+								<>
+									<span className="loading-spinner">⟳</span>
+									<span>
+										Analyzing...
+										{analysisTotalForUi ? ` (${analysisProcessedForUi}/${analysisTotalForUi}) • ${analysisPctForUi}%` : ""}
+									</span>
+								</>
+							) : (
+								"Analyze"
+							)}
+						</button>
 
-				{response && !response.success && (
-					<div className="response-box error">
-						<h3>Error</h3>
-						<pre>{JSON.stringify(response.data, null, 2)}</pre>
+						<button className="clear-btn" onClick={handleClearAll} disabled={processing || photos.length === 0}>
+							Clear all
+						</button>
 					</div>
-				)}
-			</div>
 
-			<div className="photos-section">
-				<h2>Je foto&apos;s ({photos.length})</h2>
-				{loadingPhotos ? (
-					<div className="loading-photos">Laden...</div>
-				) : photos.length === 0 ? (
-					<div className="no-photos">Nog geen foto&apos;s geüpload</div>
-				) : (
-					<div className="photos-grid">
-						{photos.map((photo) => (
-							<div key={photo.id} className="photo-card">
-								{imageUrls[photo.id] ? <img src={imageUrls[photo.id]} alt={photo.filename} className="photo-thumbnail" /> : <div className="photo-thumbnail-loading">Laden...</div>}
-								<div className="photo-info">
-									<div className="photo-filename">{photo.originalFilename}</div>
-									<div className="photo-size">{(photo.size / 1024).toFixed(1)} KB</div>
-									<div className={getStatusBadgeClass(photo.status)}>{getStatusLabel(photo.status)}</div>
-									{photo.errorMessage && (
-										<div className="photo-error-message">
-											<strong>Fout:</strong> {photo.errorMessage}
-										</div>
+					{/* Explanation for why analyze is disabled */}
+					{!canAnalyze && !analyzing && photos.length > 0 && (
+						<div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#ff9800" }}>⚠️ Analysis requires photos to have completed text extraction (status: "✓ Done"). Click "Extract" to process photos first.</div>
+					)}
+
+					{!canAnalyze && !analyzing && photos.length === 0 && <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#888" }}>Upload photos and click "Extract" to enable analysis.</div>}
+
+					{showAnalysis && analysisResults && (
+						<div className="analysis-section">
+							{analysisResults.error ? (
+								<div className="error-message">
+									<h3>❌ Analysis Error</h3>
+									<p>{analysisResults.error}</p>
+									{analysisResults.details && analysisResults.details.raw_output && (
+										<details style={{ marginTop: "1rem" }}>
+											<summary>🔍 Raw Model Output</summary>
+											<pre
+												style={{
+													background: "#1a1a1a",
+													border: "1px solid #333",
+													borderRadius: "8px",
+													padding: "1rem",
+													marginTop: "0.5rem",
+													color: "#fff",
+													fontSize: "0.9rem",
+													whiteSpace: "pre-wrap",
+													overflow: "auto",
+													maxHeight: "300px",
+												}}
+											>
+												{analysisResults.details.raw_output}
+											</pre>
+										</details>
 									)}
 								</div>
-							</div>
-						))}
-					</div>
-				)}
-
-				<button className="next-btn" onClick={handleProcessAll} disabled={processing || photos.length === 0}>
-					{processing ? "Verwerken..." : "Next"}
-				</button>
-
-				<button className="analyze-btn" onClick={handleAnalyze} disabled={analyzing || !canAnalyze}>
-					{analyzing ? (
-						<>
-							<span className="loading-spinner">⟳</span>
-							<span>
-								Analyzing...
-								{analysisTotalForUi ? ` (${analysisProcessedForUi}/${analysisTotalForUi}) • ${analysisPctForUi}%` : ""}
-							</span>
-						</>
-					) : (
-						"Analyze"
+							) : (
+								<>
+									<h3>Important things to remember</h3>
+									<div className="analysis-summary">
+										<p className="summary-text">{userShortSummary || "No summary available."}</p>
+									</div>
+								</>
+							)}
+						</div>
 					)}
-				</button>
-
-				{/* Explanation for why analyze is disabled */}
-				{!canAnalyze && !analyzing && photos.length > 0 && (
-					<div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#ff9800" }}>⚠️ Analysis requires photos to have completed text extraction (status: "✓ Klaar"). Click "Next" to process photos first.</div>
-				)}
-
-				{!canAnalyze && !analyzing && photos.length === 0 && <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#888" }}>Upload photos and click "Next" to enable analysis.</div>}
-
-				{/* Analysis progress explanation */}
-				{canAnalyze && !analyzing && <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#888" }}>Analysis may take time. Progress is shown per photo below.</div>}
-
-				<button className="clear-btn" onClick={handleClearAll} disabled={processing || photos.length === 0}>
-					Clear list
-				</button>
-
-				{showAnalysis && analysisResults && (
-					<div className="analysis-section">
-						{analysisResults.error ? (
-							<div className="error-message">
-								<h3>❌ Analysis Error</h3>
-								<p>{analysisResults.error}</p>
-								{analysisResults.details && analysisResults.details.raw_output && (
-									<details style={{ marginTop: "1rem" }}>
-										<summary>🔍 Raw Model Output</summary>
-										<pre
-											style={{
-												background: "#1a1a1a",
-												border: "1px solid #333",
-												borderRadius: "8px",
-												padding: "1rem",
-												marginTop: "0.5rem",
-												color: "#fff",
-												fontSize: "0.9rem",
-												whiteSpace: "pre-wrap",
-												overflow: "auto",
-												maxHeight: "300px",
-											}}
-										>
-											{analysisResults.details.raw_output}
-										</pre>
-									</details>
-								)}
-							</div>
-						) : (
-							<>
-								<h3>Important things to remember</h3>
-								<div className="analysis-summary">
-									<p className="summary-text">{userShortSummary || "No summary available."}</p>
-								</div>
-							</>
-						)}
-					</div>
-				)}
+				</div>
 			</div>
 		</div>
 	);

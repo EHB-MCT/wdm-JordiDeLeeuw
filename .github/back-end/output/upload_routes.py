@@ -844,7 +844,6 @@ def analyze_photos():
     #simple in-memory lock to prevent concurrent analyze requests
     if not hasattr(analyze_photos, '_locks'):
         analyze_photos._locks = {}
-
     try:
         user_id = check_auth(request)
         if not user_id:
@@ -1066,6 +1065,7 @@ OCR text:
         #clean up the lock
         if hasattr(analyze_photos, '_locks') and 'user_id' in locals() and user_id in analyze_photos._locks:
             del analyze_photos._locks[user_id]
+
 
 @upload_bp.route("/api/photos/analysis-progress", methods=["GET"])
 def get_analysis_progress():

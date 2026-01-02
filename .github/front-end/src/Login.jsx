@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
-import "./App.css";
+import "./styles/Auth.css";
 
 const API_BASE = "";
 
@@ -25,9 +25,7 @@ export function Login() {
 
 		try {
 			const endpoint = mode === "login" ? `${API_BASE}/api/login` : `${API_BASE}/api/register`;
-			const body = mode === "login" 
-				? { email, password }
-				: { email, password, confirmPassword, isAdmin };
+			const body = mode === "login" ? { email, password } : { email, password, confirmPassword, isAdmin };
 
 			const res = await fetch(endpoint, {
 				method: "POST",
@@ -45,12 +43,12 @@ export function Login() {
 			if (res.ok) {
 				setResponse({ success: true, data });
 				// Store admin status and redirect appropriately
-				login({ 
-					email: data.email, 
-					userId: data.userId, 
-					isAdmin: data.isAdmin || false 
+				login({
+					email: data.email,
+					userId: data.userId,
+					isAdmin: data.isAdmin || false,
 				});
-				
+
 				// Redirect admin to admin dashboard, users to regular dashboard
 				const redirectPath = data.isAdmin ? "/admin" : "/dashboard";
 				setTimeout(() => navigate(redirectPath), 500);
@@ -58,9 +56,9 @@ export function Login() {
 				setResponse({ success: false, data });
 			}
 		} catch (error) {
-			setResponse({ 
-				success: false, 
-				data: { error: error.message || "Network error - could not reach server" }
+			setResponse({
+				success: false,
+				data: { error: error.message || "Network error - could not reach server" },
 			});
 		} finally {
 			setLoading(false);
@@ -81,30 +79,19 @@ export function Login() {
 					</button>
 				</div>
 
-				<h1 className="auth-title">{isLogin ? "Welkom terug" : "Maak een account"}</h1>
+				<h1 className="auth-title">{isLogin ? "Welcome back" : "Create an account"}</h1>
 
 				<form className="auth-form" onSubmit={handleSubmit}>
 					<label className="auth-label">
-						E-mail
+						Email
 						<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="auth-input" required />
 					</label>
 
 					<label className="auth-label">
-						Wachtwoord
+						Password
 						<div className="password-input-wrapper">
-							<input 
-								type={showPassword ? "text" : "password"} 
-								value={password} 
-								onChange={(e) => setPassword(e.target.value)} 
-								className="auth-input" 
-								required 
-							/>
-							<button 
-								type="button" 
-								className="password-toggle" 
-								onClick={() => setShowPassword(!showPassword)}
-								aria-label="Toggle password visibility"
-							>
+							<input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} className="auth-input" required />
+							<button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)} aria-label="Toggle password visibility">
 								{showPassword ? "👁️" : "👁️‍🗨️"}
 							</button>
 						</div>
@@ -113,21 +100,10 @@ export function Login() {
 					{!isLogin && (
 						<>
 							<label className="auth-label">
-								Herhaal wachtwoord
+								Confirm password
 								<div className="password-input-wrapper">
-									<input 
-										type={showConfirmPassword ? "text" : "password"} 
-										value={confirmPassword} 
-										onChange={(e) => setConfirmPassword(e.target.value)} 
-										className="auth-input" 
-										required 
-									/>
-									<button 
-										type="button" 
-										className="password-toggle" 
-										onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-										aria-label="Toggle confirm password visibility"
-									>
+									<input type={showConfirmPassword ? "text" : "password"} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="auth-input" required />
+									<button type="button" className="password-toggle" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label="Toggle confirm password visibility">
 										{showConfirmPassword ? "👁️" : "👁️‍🗨️"}
 									</button>
 								</div>
@@ -141,7 +117,7 @@ export function Login() {
 					)}
 
 					<button type="submit" className="auth-submit" disabled={loading}>
-						{loading ? "Loading..." : isLogin ? "Inloggen" : "Registreren"}
+						{loading ? "Loading..." : isLogin ? "Log in" : "Register"}
 					</button>
 				</form>
 
