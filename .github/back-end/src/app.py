@@ -1,9 +1,9 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
-from extract_text import ocr_bp
-from auth_routes import auth_bp
-from upload_routes import upload_bp
-from admin_routes import admin_bp
+from routes.extract_text import ocr_bp
+from routes.auth_routes import auth_bp
+from routes.upload_routes import upload_bp
+from routes.admin_routes import admin_bp
 
 #maakt de hoofd-flask-app aan
 app = Flask(__name__)
