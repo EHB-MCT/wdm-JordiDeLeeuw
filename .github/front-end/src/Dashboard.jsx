@@ -318,6 +318,11 @@ export function Dashboard() {
 				setPhotos([]);
 				setProcessResults(null);
 				setProcessingStatus([]);
+                setAnalysisResults(null);
+                setShowAnalysis(false);
+                setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: 'idle' });
+                setAnalysisDetails([]);
+                setAnalysisCounters({ photos_found: 0, photos_started: 0, photos_completed: 0, photos_failed: 0, photos_fallback: 0, photos_queued: 0 });
 			} else {
 				const data = await res.json();
 				alert(`Fout bij verwijderen: ${data.error || "Onbekende fout"}`);
@@ -538,6 +543,18 @@ export function Dashboard() {
 	};
 
 	const canAnalyze = photos.length > 0 && photos.every((photo) => photo.status === "done");
+	// Support both legacy analysis JSON and the new required schema:
+	// {
+	//   user: { short_summary: string },
+	//   admin: { ...dashboard stats... }
+	// }
+	const details = analysisResults?.details || null;
+	const isNewSchema = !!(details && typeof details === "object" && details.user && details.admin);
+	const userShortSummary =
+		analysisResults?.summary ||
+		details?.user?.short_summary ||
+		details?.short_summary ||
+		"";
 
 	return (
 		<div className="dashboard">
@@ -867,166 +884,8 @@ export function Dashboard() {
 							<>
 								<h3>Important things to remember</h3>
 								<div className="analysis-summary">
-									<p className="summary-text">{analysisResults.summary}</p>
+									<p className="summary-text">{userShortSummary || "No summary available."}</p>
 								</div>
-
-								{analysisResults.details && (
-									<div className="analysis-details">
-										{analysisResults.details.highlights && analysisResults.details.highlights.length > 0 && (
-											<div className="detail-section">
-												<h4>🌟 Highlights</h4>
-												<ul>
-													{analysisResults.details.highlights.map((highlight, index) => (
-														<li key={index}>{highlight}</li>
-													))}
-												</ul>
-											</div>
-										)}
-
-										{analysisResults.details.action_items && analysisResults.details.action_items.length > 0 && (
-											<div className="detail-section">
-												<h4>✅ Action Items</h4>
-												<ul>
-													{analysisResults.details.action_items.map((item, index) => (
-														<li key={index}>{item}</li>
-													))}
-												</ul>
-											</div>
-										)}
-
-										{analysisResults.details.dates_deadlines && analysisResults.details.dates_deadlines.length > 0 && (
-											<div className="detail-section">
-												<h4>📅 Dates & Deadlines</h4>
-												<ul>
-													{analysisResults.details.dates_deadlines.map((item, index) => (
-														<li key={index}>
-															<strong>{item.date}</strong> - {item.context}
-														</li>
-													))}
-												</ul>
-											</div>
-										)}
-
-										{analysisResults.details.names_entities && analysisResults.details.names_entities.length > 0 && (
-											<div className="detail-section">
-												<h4>👥 Names & Entities</h4>
-												<ul>
-													{analysisResults.details.names_entities.map((name, index) => (
-														<li key={index}>{name}</li>
-													))}
-												</ul>
-											</div>
-										)}
-
-										{analysisResults.details.numbers_amounts && analysisResults.details.numbers_amounts.length > 0 && (
-											<div className="detail-section">
-												<h4>🔢 Numbers & Amounts</h4>
-												<ul>
-													{analysisResults.details.numbers_amounts.map((item, index) => (
-														<li key={index}>
-															<strong>{item.value}</strong> - {item.context}
-														</li>
-													))}
-												</ul>
-											</div>
-										)}
-
-										{analysisResults.details.key_takeaways && analysisResults.details.key_takeaways.length > 0 && (
-											<div className="detail-section">
-												<h4>💡 Key Takeaways</h4>
-												<ul>
-													{analysisResults.details.key_takeaways.map((takeaway, index) => (
-														<li key={index}>{takeaway}</li>
-													))}
-												</ul>
-											</div>
-										)}
-
-										{Object.keys(analysisResults.details).length === 0 && (
-											<div className="detail-section">
-												<p>No structured analysis data available.</p>
-											</div>
-										)}
-									</div>
-								)}
-
-								{/* Per-photo analysis details */}
-								{analysisResults.perPhotoResults && Object.keys(analysisResults.perPhotoResults).length > 0 && (
-									<div className="detail-section">
-										<h4>📸 Per-Photo Analysis Details</h4>
-										<div
-											style={{
-												maxHeight: "300px",
-												overflowY: "auto",
-												background: "#1a1a1a",
-												border: "1px solid #333",
-												borderRadius: "8px",
-												padding: "1rem",
-												marginTop: "1rem",
-											}}
-										>
-											{Object.entries(analysisResults.perPhotoResults).map(([photoId, result]) => (
-												<div
-													key={photoId}
-													style={{
-														marginBottom: "1rem",
-														padding: "0.5rem",
-														borderBottom: "1px solid #333",
-													}}
-												>
-													<div
-														style={{
-															fontWeight: "bold",
-															color: "#4CAF50",
-															marginBottom: "0.5rem",
-														}}
-													>
-														📄 {result.filename} ({result.chunkCount} chunks)
-													</div>
-													<div style={{ fontSize: "0.9rem", lineHeight: "1.4" }}>
-														{result.analysis.highlights && result.analysis.highlights.length > 0 && (
-															<div style={{ marginBottom: "0.5rem" }}>
-																<strong>🌟 Highlights:</strong> {result.analysis.highlights.join(", ")}
-															</div>
-														)}
-														{result.analysis.action_items && result.analysis.action_items.length > 0 && (
-															<div style={{ marginBottom: "0.5rem" }}>
-																<strong>✅ Actions:</strong> {result.analysis.action_items.join(", ")}
-															</div>
-														)}
-														{result.analysis.names_entities && result.analysis.names_entities.length > 0 && (
-															<div style={{ marginBottom: "0.5rem" }}>
-																<strong>👥 Names:</strong> {result.analysis.names_entities.join(", ")}
-															</div>
-														)}
-														{result.analysis.dates_deadlines && result.analysis.dates_deadlines.length > 0 && (
-															<div style={{ marginBottom: "0.5rem" }}>
-																<strong>📅 Dates:</strong> {result.analysis.dates_deadlines.map((d) => `${d.date}`).join(", ")}
-															</div>
-														)}
-														{result.analysis.numbers_amounts && result.analysis.numbers_amounts.length > 0 && (
-															<div>
-																<strong>🔢 Numbers:</strong> {result.analysis.numbers_amounts.map((n) => n.value).join(", ")}
-															</div>
-														)}
-														{result.analysis.short_summary && (
-															<div
-																style={{
-																	fontStyle: "italic",
-																	marginTop: "0.5rem",
-																	color: "#ccc",
-																}}
-															>
-																📝 {result.analysis.short_summary}
-															</div>
-														)}
-													</div>
-												</div>
-											))}
-										</div>
-									</div>
-								)}
-
 								{/* Full JSON output for debugging */}
 								<div className="detail-section">
 									<h4>🔍 Complete Analysis Data</h4>
@@ -1051,7 +910,7 @@ export function Dashboard() {
 												wordBreak: "break-word",
 											}}
 										>
-											{JSON.stringify(analysisResults.details || analysisResults, null, 2)}
+											{JSON.stringify(details || analysisResults, null, 2)}
 										</pre>
 									</div>
 								</div>

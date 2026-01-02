@@ -276,46 +276,91 @@ def migrate_photos():
             "details": str(e)
         }), 500
 
-def validate_json_structure(data):
-    """Validate JSON response structure and types"""
-    required_keys = [
-        "highlights", "action_items", "dates_deadlines", 
-        "names_entities", "numbers_amounts", "key_takeaways", "short_summary"
-    ]
-    
-    if not isinstance(data, dict) or not all(key in data for key in required_keys):
-        return False, "Missing required keys or not a dict"
-    
-    if not all(isinstance(data.get(key), list) for key in [
-        "highlights", "action_items", "dates_deadlines", 
-        "names_entities", "numbers_amounts", "key_takeaways"
-    ]):
-        return False, "Array fields must be lists"
-    
-    if not isinstance(data.get("short_summary"), str):
-        return False, "short_summary must be a string"
-    
-    #validate dates_deadlines structure
-    for item in data.get("dates_deadlines", []):
-        if not isinstance(item, dict) or "date" not in item or "context" not in item:
-            return False, "dates_deadlines items must have date and context"
-    
-    #validate numbers_amounts structure
-    for item in data.get("numbers_amounts", []):
-        if not isinstance(item, dict) or "value" not in item or "context" not in item:
-            return False, "numbers_amounts items must have value and context"
-    
-    #ensure short_summary is plain text, not JSON
-    short_summary = data.get("short_summary", "")
-    if '{' in short_summary or '}' in short_summary:
-        #clean JSON artifacts from short_summary
-        cleaned = short_summary.replace('{', '').replace('}', '').strip()
-        if cleaned.startswith('"') and cleaned.endswith('"'):
-            cleaned = cleaned[1:-1]
-        data["short_summary"] = cleaned
-        print("Cleaned JSON artifacts from short_summary")
-    
+
+def validate_final_result_structure(data):
+    """Validate FINAL resultJson structure:
+    {
+      "user": {"short_summary": "string"},
+      "admin": {
+        "timestampLeakage": [{"hour": int, "count": int}] * 24,
+        "socialContextLeakage": {relationshipLabels, handles, emails, phonePatterns, nameEntities},
+        "professionalLiabilitySignals": [{name,count}] * 3,
+        "locationLeakageSignals": [{name,count}] * 3
+      }
+    }
+    """
+    if not isinstance(data, dict):
+        return False, "Not an object"
+
+    if "user" not in data or "admin" not in data:
+        return False, "Missing user/admin"
+
+    user = data.get("user")
+    admin = data.get("admin")
+
+    if not isinstance(user, dict) or not isinstance(admin, dict):
+        return False, "user/admin must be objects"
+
+    if not isinstance(user.get("short_summary"), str):
+        return False, "user.short_summary must be a string"
+
+    # timestampLeakage
+    tl = admin.get("timestampLeakage")
+    if not isinstance(tl, list) or len(tl) != 24:
+        return False, "admin.timestampLeakage must be a list of 24 items"
+    for i, item in enumerate(tl):
+        if not isinstance(item, dict):
+            return False, f"timestampLeakage[{i}] must be an object"
+        if item.get("hour") != i:
+            return False, f"timestampLeakage[{i}].hour must be {i}"
+        if not isinstance(item.get("count"), int) or item.get("count") < 0:
+            return False, f"timestampLeakage[{i}].count must be a non-negative int"
+
+    # socialContextLeakage
+    scl = admin.get("socialContextLeakage")
+    if not isinstance(scl, dict):
+        return False, "admin.socialContextLeakage must be an object"
+    for key in ["relationshipLabels", "handles", "emails", "phonePatterns", "nameEntities"]:
+        if not isinstance(scl.get(key), int) or scl.get(key) < 0:
+            return False, f"socialContextLeakage.{key} must be a non-negative int"
+
+    # professionalLiabilitySignals
+    pls = admin.get("professionalLiabilitySignals")
+    if not isinstance(pls, list) or len(pls) != 3:
+        return False, "admin.professionalLiabilitySignals must be a list of 3 items"
+    expected_pls = ["Aggression Hits", "Profanity Hits", "Shouting Hits"]
+    for i, exp_name in enumerate(expected_pls):
+        item = pls[i]
+        if not isinstance(item, dict):
+            return False, f"professionalLiabilitySignals[{i}] must be an object"
+        if item.get("name") != exp_name:
+            return False, f"professionalLiabilitySignals[{i}].name must be '{exp_name}'"
+        if not isinstance(item.get("count"), int) or item.get("count") < 0:
+            return False, f"professionalLiabilitySignals[{i}].count must be a non-negative int"
+
+    # locationLeakageSignals
+    lls = admin.get("locationLeakageSignals")
+    if not isinstance(lls, list) or len(lls) != 3:
+        return False, "admin.locationLeakageSignals must be a list of 3 items"
+    expected_lls = ["Explicit location keywords", "Travel/route context", "No location signals"]
+    for i, exp_name in enumerate(expected_lls):
+        item = lls[i]
+        if not isinstance(item, dict):
+            return False, f"locationLeakageSignals[{i}] must be an object"
+        if item.get("name") != exp_name:
+            return False, f"locationLeakageSignals[{i}].name must be '{exp_name}'"
+        if not isinstance(item.get("count"), int) or item.get("count") < 0:
+            return False, f"locationLeakageSignals[{i}].count must be a non-negative int"
+
     return True, "Valid"
+
+
+def validate_summary_only(data):
+    """Validate summary-only JSON: {"short_summary": "..."}"""
+    if not isinstance(data, dict):
+        return False
+    ss = data.get("short_summary")
+    return isinstance(ss, str) and len(ss.strip()) > 0
 
 def chunk_text(text, chunk_size=1000, overlap=150):
     """Split text into chunks with overlap"""
@@ -359,29 +404,19 @@ def chunk_text(text, chunk_size=1000, overlap=150):
 
 def create_chunk_prompt(photo_info, chunk_text, chunk_index, total_chunks):
     """Create prompt for analyzing a single text chunk"""
-    return f'''You are analyzing a chunk (chunk {chunk_index + 1} of {total_chunks}) from a photo.
+    return f'''You are summarizing OCR text from a photo.
 
 Photo: {photo_info['filename']} (uploaded: {photo_info['uploaded_at']})
 
 INSTRUCTIONS:
 - Return ONLY valid JSON. No preamble. No explanation. No markdown.
-- Do NOT include JSON inside short_summary.
-- short_summary must be plain text (1-2 sentences for this chunk).
-- If info exists in chunk text, fill correct arrays; do not leave everything empty.
 - Output must start with "{{" and end with "}}".
+- Keep short_summary natural human text, 1-3 sentences.
 
 Return this JSON structure:
-{{
-  "highlights": [],
-  "action_items": [],
-  "dates_deadlines": [{{"date": "", "context": ""}}],
-  "names_entities": [],
-  "numbers_amounts": [{{"value": "", "context": ""}}],
-  "key_takeaways": [],
-  "short_summary": ""
-}}
+{{"short_summary": ""}}
 
-Chunk text to analyze:
+OCR text to summarize:
 {chunk_text}'''
 
 def merge_analysis_results(results_list):
@@ -464,68 +499,209 @@ The summary should be natural human text, NOT JSON-like content.'''
 
     return prompt
 
-def parse_llm_response(response):
-    """Parse and validate LLM response with retry logic"""
+def parse_llm_response(response, mode: str = "summary"):
+    """Parse LLM response.
+    mode:
+      - "summary": expects {"short_summary": "..."}
+      - "final": expects the full resultJson structure (user/admin)
+    """
     import json
     if not response or not response.strip():
         return None
-        
-    max_attempts = 2
-    for attempt in range(max_attempts):
+
+    clean_response = response.strip()
+
+    # Try direct JSON parse
+    try:
+        obj = json.loads(clean_response)
+    except json.JSONDecodeError:
+        # Extract JSON between first { and last }
+        first_brace = clean_response.find('{')
+        last_brace = clean_response.rfind('}')
+        if first_brace == -1 or last_brace == -1 or last_brace <= first_brace:
+            return None
         try:
-            clean_response = response.strip()
-            
-            #try parsing entire response first
-            try:
-                result_json = json.loads(clean_response)
-            except json.JSONDecodeError:
-                #extract JSON between first { and last }
-                first_brace = clean_response.find('{')
-                last_brace = clean_response.rfind('}')
-                
-                if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-                    json_str = clean_response[first_brace:last_brace + 1]
-                    result_json = json.loads(json_str)
-                else:
-                    raise Exception("No JSON found in response")
-            
-            #validate structure
-            is_valid, validation_msg = validate_json_structure(result_json)
-            if is_valid:
-                return result_json
-            else:
-                print(f"Invalid JSON structure: {validation_msg}")
-                if attempt == max_attempts - 1:
-                    return None
-                    
-        except Exception as e:
-            print(f"Parse attempt {attempt + 1} failed: {e}")
-            if attempt == max_attempts - 1:
-                return None
-    
+            obj = json.loads(clean_response[first_brace:last_brace + 1])
+        except Exception:
+            return None
+
+    if mode == "summary":
+        if validate_summary_only(obj):
+            # Clean weird braces inside the string if the model did that
+            ss = obj.get("short_summary", "")
+            if isinstance(ss, str) and ('{' in ss or '}' in ss):
+                obj["short_summary"] = ss.replace('{', '').replace('}', '').strip()
+            return obj
+        return None
+
+    if mode == "final":
+        ok, _msg = validate_final_result_structure(obj)
+        return obj if ok else None
+
     return None
+
+
+# === Helper functions for admin metrics and final resultJson ===
+
+def _empty_admin_metrics():
+    return {
+        "timestampLeakage": [{"hour": i, "count": 0} for i in range(24)],
+        "socialContextLeakage": {
+            "relationshipLabels": 0,
+            "handles": 0,
+            "emails": 0,
+            "phonePatterns": 0,
+            "nameEntities": 0,
+        },
+        "professionalLiabilitySignals": [
+            {"name": "Aggression Hits", "count": 0},
+            {"name": "Profanity Hits", "count": 0},
+            {"name": "Shouting Hits", "count": 0},
+        ],
+        "locationLeakageSignals": [
+            {"name": "Explicit location keywords", "count": 0},
+            {"name": "Travel/route context", "count": 0},
+            {"name": "No location signals", "count": 0},
+        ],
+    }
+
+
+def build_admin_metrics_from_ocr(ocr_texts):
+    """Deterministically compute admin dashboard metrics from OCR text.
+    This ensures the JSON ALWAYS matches the AdminDashboard graphs.
+    """
+    import re
+
+    metrics = _empty_admin_metrics()
+
+    combined = "\n".join([t for t in ocr_texts if isinstance(t, str) and t.strip()])
+    if not combined.strip():
+        metrics["locationLeakageSignals"][2]["count"] = 1
+        return metrics
+
+    # Timestamp leakage (00-23h) from time-like patterns
+    # Examples: 13:45, 13h45, 13:45:22, 9:01, 09:01
+    time_pat = re.compile(r"\b(?P<hour>[01]?\d|2[0-3])\s*(?:[:h]\s*[0-5]\d)(?::\s*[0-5]\d)?\b")
+    for m in time_pat.finditer(combined):
+        h = int(m.group("hour"))
+        metrics["timestampLeakage"][h]["count"] += 1
+
+    # Social context leakage
+    handle_pat = re.compile(r"@([A-Za-z0-9_]{2,})")
+    email_pat = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+    phone_pat = re.compile(r"(?:\+?\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)?\d{3}[\s-]?\d{3,4}\b")
+
+    metrics["socialContextLeakage"]["handles"] = len(handle_pat.findall(combined))
+    metrics["socialContextLeakage"]["emails"] = len(email_pat.findall(combined))
+    metrics["socialContextLeakage"]["phonePatterns"] = len(phone_pat.findall(combined))
+
+    rel_words = [
+        "boyfriend", "girlfriend", "bf", "gf", "husband", "wife",
+        "mom", "mum", "mother", "dad", "father", "sister", "brother",
+        "friend", "bestie", "partner", "manager", "boss"
+    ]
+    rel_count = 0
+    low = combined.lower()
+    for w in rel_words:
+        rel_count += low.count(w)
+    metrics["socialContextLeakage"]["relationshipLabels"] = rel_count
+
+    # Name entities (simple heuristic: capitalized words, excluding common starts)
+    # Not perfect, but stable for your admin graphs.
+    cap_pat = re.compile(r"\b[A-Z][a-z]{2,}\b")
+    caps = cap_pat.findall(combined)
+    stop = set(["I", "The", "A", "An", "And", "Or", "But", "To", "Of", "In", "On", "At", "For", "With"])
+    nameish = [c for c in caps if c not in stop]
+    metrics["socialContextLeakage"]["nameEntities"] = len(nameish)
+
+    # Professional liability signals
+    aggression_words = [
+        "kill", "hurt", "attack", "threat", "idiot", "stupid", "hate",
+        "destroy", "beat", "punch", "slap"
+    ]
+    profanity_words = [
+        "fuck", "shit", "bitch", "asshole", "damn", "cunt", "fucking"
+    ]
+
+    aggr_hits = 0
+    prof_hits = 0
+    for w in aggression_words:
+        aggr_hits += low.count(w)
+    for w in profanity_words:
+        prof_hits += low.count(w)
+
+    # Shouting hits: ALL CAPS tokens length>=4 or excessive !!
+    caps_tokens = re.findall(r"\b[A-Z]{4,}\b", combined)
+    exclam = combined.count("!!")
+    shout_hits = len(caps_tokens) + exclam
+
+    metrics["professionalLiabilitySignals"][0]["count"] = aggr_hits
+    metrics["professionalLiabilitySignals"][1]["count"] = prof_hits
+    metrics["professionalLiabilitySignals"][2]["count"] = shout_hits
+
+    # Location leakage
+    location_keywords = [
+        "street", "st.", "straat", "address", "adres", "city", "stad",
+        "station", "metro", "tram", "bus", "airport", "hotel", "postcode",
+        "zip", "gps", "latitude", "longitude"
+    ]
+    travel_keywords = [
+        "route", "travel", "trip", "flight", "train", "platform", "gate",
+        "departure", "arrival", "destination"
+    ]
+
+    loc_count = 0
+    trav_count = 0
+    for w in location_keywords:
+        loc_count += low.count(w)
+    for w in travel_keywords:
+        trav_count += low.count(w)
+
+    if loc_count == 0 and trav_count == 0:
+        metrics["locationLeakageSignals"][2]["count"] = 1
+    else:
+        metrics["locationLeakageSignals"][0]["count"] = loc_count
+        metrics["locationLeakageSignals"][1]["count"] = trav_count
+        metrics["locationLeakageSignals"][2]["count"] = 0
+
+    return metrics
+
+
+def build_final_result_json(short_summary: str, admin_metrics: dict):
+    result = {
+        "user": {"short_summary": short_summary or ""},
+        "admin": admin_metrics or _empty_admin_metrics(),
+    }
+    # Defensive: ensure correct structure
+    ok, _ = validate_final_result_structure(result)
+    if not ok:
+        result = {
+            "user": {"short_summary": short_summary or ""},
+            "admin": _empty_admin_metrics(),
+        }
+    return result
 
 @upload_bp.route("/api/photos/analyze", methods=["POST"])
 def analyze_photos():
     #analyze OCR text using Ollama LLM
     import json
     import time
-    
+
     #simple in-memory lock to prevent concurrent analyze requests
     if not hasattr(analyze_photos, '_locks'):
         analyze_photos._locks = {}
-    
+
     try:
         user_id = check_auth(request)
         if not user_id:
             return jsonify({"error": "Unauthorized - no user ID provided"}), 401
-        
+
         current_time = time.time()
         if user_id in analyze_photos._locks:
             last_request_time = analyze_photos._locks[user_id]
             if current_time - last_request_time < 30:  # 30 second cooldown
                 return jsonify({"error": "Analysis already in progress. Please wait 30 seconds between requests."}), 429
-        
+
         analyze_photos._locks[user_id] = current_time
 
         # Initialize analysis status for all eligible photos
@@ -535,253 +711,94 @@ def analyze_photos():
 
         #get photos with completed OCR - LIMIT to prevent resource overload
         photos_data = auth_backend.get_photos_for_analysis_limited(user_id, max_photos=20, max_chars=8000)
-        
+
         if len(photos_data) == 0:
             return jsonify({"error": "No photos with completed OCR found to analyze"}), 400
-        
+
         print(f"Found {len(photos_data)} photos with OCR text for analysis")
         print(f"ANALYSIS PROGRESS: Starting analysis of {len(photos_data)} photos for user {user_id}")
 
-#chunking-based analysis per photo with total limits
-        max_photos = 20
-        max_chunks_per_photo = 10
-        
-        print(f"Starting chunked analysis of {len(photos_data)} photos for user {user_id}")
-        
+        # Build OCR text list for admin metrics
+        ocr_texts = []
         per_photo_results = {}
-        all_photo_data = []
-        
+
         analysis_progress = {
             "photos_found": len(photos_data),
             "photos_started": 0,
             "photos_completed": 0,
             "photos_failed": 0,
-            "photos_fallback": 0
+            "photos_fallback": 0,
         }
-        
-        for photo_idx, photo in enumerate(photos_data[:max_photos]):
+
+        # Mark each photo as processing/completed so your progress UI keeps working
+        for photo_idx, photo in enumerate(photos_data):
             photo_id = str(photo["_id"])
             filename = photo.get("originalFilename", f"photo_{photo_id}")
-            
-            print(f"ANALYSIS PROGRESS: Starting photo {photo_idx + 1}/{len(photos_data)}: {filename}")
-            
-            # Update status to processing
             auth_backend.update_analysis_progress(photo_id, "processing")
             analysis_progress["photos_started"] += 1
-            
-            # Add pacing between photos to allow CPU cooling
-            if photo_idx > 0:
-                print(f"ANALYSIS PROGRESS: Pausing 3 seconds before photo {photo_idx + 1} for CPU cooling...")
-                time.sleep(3)  # Allow CPU to cool between photos
-                
-            photo_info = {
-                "id": photo_id,
+
+            text = (photo.get("ocr", {}) or {}).get("extractedText", "")
+            text = (text or "").strip()
+            if text:
+                ocr_texts.append(text)
+
+            # Keep perPhotoResults minimal but useful
+            per_photo_results[photo_id] = {
                 "filename": filename,
-                "uploaded_at": photo.get("uploadedAt", "").strftime("%Y-%m-%d %H:%M") if photo.get("uploadedAt") else "unknown",
-                "extracted_text": photo.get("ocr", {}).get("extractedText", "").strip()
+                "hasText": bool(text),
+                "textLength": len(text),
             }
-            
-            if not photo_info["extracted_text"]:
-                print(f"ANALYSIS PROGRESS: Skipping photo {photo_idx + 1} - no extracted text")
-                auth_backend.update_analysis_progress(photo_id, "completed")
-                analysis_progress["photos_completed"] += 1
-                continue
-            
-            #chunk the text
-            chunks = chunk_text(photo_info["extracted_text"], chunk_size=1000, overlap=150)
-            
-            #limit chunks per photo
-            if len(chunks) > max_chunks_per_photo:
-                chunks = chunks[:max_chunks_per_photo]
-                print(f"ANALYSIS PROGRESS: Limited photo {photo_idx + 1} to {max_chunks_per_photo} chunks")
-            
-            print(f"ANALYSIS PROGRESS: Processing photo {photo_idx + 1}: {photo_info['filename']}, {len(chunks)} chunks, {len(photo_info['extracted_text'])} chars")
-            
-            chunk_results = []
-            photo_failed = False
-            fallback_used = False
-            
-            #analyze each chunk
-            for chunk_idx, chunk in enumerate(chunks):
-                print(f"ANALYSIS PROGRESS: Analyzing chunk {chunk_idx + 1}/{len(chunks)} ({len(chunk)} chars)")
-                
-                # Update status to sending to LLM
-                if chunk_idx == 0:
-                    auth_backend.update_analysis_progress(photo_id, "sent_to_llm")
-                
-                chunk_prompt = create_chunk_prompt(photo_info, chunk, chunk_idx, len(chunks))
-                
-                try:
-                    print(f"ANALYSIS PROGRESS: Sending chunk {chunk_idx + 1} to LLM for {filename}")
-                    chunk_response = auth_backend.query_ollama(chunk_prompt, "llama3")
-                    chunk_result = parse_llm_response(chunk_response)
-                    
-                    if chunk_result:
-                        chunk_results.append(chunk_result)
-                        print(f"ANALYSIS PROGRESS: ✓ Chunk {chunk_idx + 1} analyzed successfully for {filename}")
-                    else:
-                        print(f"ANALYSIS PROGRESS: ✗ Chunk {chunk_idx + 1} failed to parse for {filename}")
-                        photo_failed = True
-                        # Create fallback result for failed LLM parse
-                        fallback_result = {
-                            "highlights": [f"Text from {photo_info['filename']}"],
-                            "action_items": [],
-                            "dates_deadlines": [],
-                            "names_entities": [],
-                            "numbers_amounts": [],
-                            "key_takeaways": ["Text content requires manual review"],
-                            "short_summary": f"Extracted text from {photo_info['filename']}"
-                        }
-                        chunk_results.append(fallback_result)
-                        fallback_used = True
-                        print(f"ANALYSIS PROGRESS: ⚠ Using fallback result for chunk {chunk_idx + 1} of {filename}")
-                        
-                except Exception as e:
-                    print(f"ANALYSIS PROGRESS: ✗ Chunk {chunk_idx + 1} error for {filename}: {e}")
-                    photo_failed = True
-                    # Create fallback result for failed LLM request
-                    fallback_result = {
-                        "highlights": [f"Text from {photo_info['filename']}"],
-                        "action_items": [],
-                        "dates_deadlines": [],
-                        "names_entities": [],
-                        "numbers_amounts": [],
-                        "key_takeaways": ["Text content requires manual review"],
-                        "short_summary": f"Extracted text from {photo_info['filename']}"
-                    }
-                    chunk_results.append(fallback_result)
-                    fallback_used = True
-                    print(f"ANALYSIS PROGRESS: ⚠ Using fallback result for chunk {chunk_idx + 1} of {filename} due to error: {e}")
-            
-            #merge chunk results for this photo
-            if chunk_results:
-                merged_photo_analysis = merge_analysis_results(chunk_results)
-                
-                #create final photo summary
-                summary_prompt = create_photo_summary_prompt(photo_info, merged_photo_analysis)
-                try:
-                    print(f"ANALYSIS PROGRESS: Creating photo summary for {filename}")
-                    summary_response = auth_backend.query_ollama(summary_prompt, "llama3")
-                    summary_result = parse_llm_response(summary_response)
-                    
-                    if summary_result and "short_summary" in summary_result:
-                        merged_photo_analysis["short_summary"] = summary_result["short_summary"]
-                        print(f"ANALYSIS PROGRESS: ✓ Photo summary created for {filename}: {summary_result['short_summary'][:100]}...")
-                    else:
-                        #fallback: use best existing summary or create generic one
-                        existing_summaries = [cr.get("short_summary", "") for cr in chunk_results if cr.get("short_summary")]
-                        merged_photo_analysis["short_summary"] = existing_summaries[0] if existing_summaries else f"Analysis of {photo_info['filename']} with {len(chunk_results)} processed chunks"
-                        
-                except Exception as e:
-                    print(f"ANALYSIS PROGRESS: ✗ Photo summary error for {filename}: {e}")
-                    merged_photo_analysis["short_summary"] = f"Analysis of {photo_info['filename']}"
-                
-                #store photo result
-                per_photo_results[photo_id] = {
-                    "photo_info": photo_info,
-                    "analysis": merged_photo_analysis,
-                    "chunk_count": len(chunk_results)
-                }
-                all_photo_data.append(merged_photo_analysis)
-                
-                #save per-photo pipeline result
-                try:
-                    auth_backend.update_photo_pipeline_result(photo_id, "userExtract", merged_photo_analysis)
-                except Exception as e:
-                    print(f"ANALYSIS PROGRESS: ⚠ Failed to save pipeline result for {filename}: {e}")
-            
-            # Update final status based on what happened
-            if photo_failed:
-                if fallback_used:
-                    auth_backend.update_analysis_progress(photo_id, "fallback_used")
-                    analysis_progress["photos_fallback"] += 1
-                    print(f"ANALYSIS PROGRESS: Photo {filename} completed with fallback")
-                else:
-                    auth_backend.update_analysis_progress(photo_id, "llm_failed", "LLM processing failed")
-                    analysis_progress["photos_failed"] += 1
-                    print(f"ANALYSIS PROGRESS: Photo {filename} failed")
-            else:
-                auth_backend.update_analysis_progress(photo_id, "completed")
-                analysis_progress["photos_completed"] += 1
-                print(f"ANALYSIS PROGRESS: Photo {filename} completed successfully")
-            
-            print(f"ANALYSIS PROGRESS: Photo {photo_idx + 1}/{len(photos_data)} complete: {len(chunk_results)} chunks analyzed")
-        
-        #create final combined summary across all photos
-        if all_photo_data:
-            print(f"Creating final combined summary from {len(all_photo_data)} photos...")
-            final_merged = merge_analysis_results(all_photo_data)
-            
-            #create final combined summary prompt
-            final_prompt = f'''Create a concise summary (1-3 sentences) of all analyzed photos based on these combined insights:
 
-Total photos analyzed: {len(all_photo_data)}
+            auth_backend.update_analysis_progress(photo_id, "completed")
+            analysis_progress["photos_completed"] += 1
 
-Key highlights found:
-{chr(10).join([f"- {h}" for h in final_merged.get("highlights", [])[:5]])}
+        # Deterministic admin metrics (matches AdminDashboard expected shape)
+        admin_metrics = build_admin_metrics_from_ocr(ocr_texts)
 
-Main action items:
-{chr(10).join([f"- {a}" for a in final_merged.get("action_items", [])[:5]])}
+        # LLM summary (ONLY user short summary)
+        combined_text = "\n\n".join(ocr_texts)
+        # Safety: do not send extremely large prompts
+        max_chars = 9000
+        if len(combined_text) > max_chars:
+            combined_text = combined_text[:max_chars]
 
-Important dates/entities:
-{chr(10).join([f"- {n}" for n in final_merged.get("names_entities", [])[:3]])}
+        summary_prompt = f'''You summarize OCR text from multiple screenshots.
 
-Return ONLY this JSON structure:
-{{"short_summary": "Concise summary of all photos"}}
+INSTRUCTIONS:
+- Return ONLY valid JSON. No preamble. No explanation. No markdown.
+- Output must start with "{{" and end with "}}".
+- Keep short_summary natural human text, 1-3 sentences.
 
-The summary should be natural human text covering the main insights from all photos.'''
-            
-            try:
-                final_response = auth_backend.query_ollama(final_prompt, "llama3")
-                final_summary_result = parse_llm_response(final_response)
-                
-                if final_summary_result and "short_summary" in final_summary_result:
-                    final_merged["short_summary"] = final_summary_result["short_summary"]
-                    print(f"✓ Final summary created: {final_summary_result['short_summary'][:150]}...")
-                else:
-                    final_merged["short_summary"] = f"Analysis of {len(all_photo_data)} photos with extracted text and insights"
-                    
-            except Exception as e:
-                print(f"✗ Final summary error: {e}")
-                final_merged["short_summary"] = f"Analysis of {len(all_photo_data)} photos"
-            
-            final_result_json = final_merged
-        else:
-            # Differentiate between no photos found vs processing failures
-            if len(per_photo_results) == 0:
-                # All photos failed processing (likely LLM timeouts)
-                final_result_json = {
-                    "highlights": [],
-                    "action_items": [],
-                    "dates_deadlines": [],
-                    "names_entities": [],
-                    "numbers_amounts": [],
-                    "key_takeaways": [],
-                    "short_summary": f"Found {len(photos_data)} photos with text, but analysis failed due to processing errors. Try again with fewer photos."
-                }
-            else:
-                # This should not happen, but fallback to original message
-                final_result_json = {
-                    "highlights": [],
-                    "action_items": [],
-                    "dates_deadlines": [],
-                    "names_entities": [],
-                    "numbers_amounts": [],
-                    "key_takeaways": [],
-                    "short_summary": "No photos with extracted text found to analyze"
-                }
+Return this JSON structure:
+{{"short_summary": ""}}
 
-        print(f"ANALYSIS PROGRESS: Chunked analysis complete for user {user_id}")
-        print(f"ANALYSIS PROGRESS: Final summary - {len(per_photo_results)} photos processed, {analysis_progress['photos_completed']} completed, {analysis_progress['photos_fallback']} fallback, {analysis_progress['photos_failed']} failed")
-        
-        #save combined user summary
+OCR text:
+{combined_text}'''
+
+        short_summary = ""
+        try:
+            llm_resp = auth_backend.query_ollama(summary_prompt, "llama3")
+            parsed = parse_llm_response(llm_resp, mode="summary")
+            if parsed and parsed.get("short_summary"):
+                short_summary = parsed["short_summary"].strip()
+        except Exception as e:
+            print(f"LLM summary error: {e}")
+
+        if not short_summary:
+            # Fallback summary that is still valid for the UI
+            short_summary = "Analysis completed, but no reliable summary could be generated."
+            analysis_progress["photos_fallback"] += 1
+
+        final_result_json = build_final_result_json(short_summary, admin_metrics)
+
+        # Save combined user summary (shortSummary mirrors user.short_summary)
         try:
             summary_id = auth_backend.save_user_summary(
                 user_id=user_id,
                 photo_ids=list(per_photo_results.keys()),
-                model_used="llama3_chunked",
+                model_used="llama3_summary_only",
                 result_json=final_result_json,
-                short_summary=final_result_json.get("short_summary", "")
+                short_summary=final_result_json.get("user", {}).get("short_summary", ""),
             )
             print(f"Saved user summary ID: {summary_id}")
         except Exception as e:
@@ -792,19 +809,12 @@ The summary should be natural human text covering the main insights from all pho
             }), 500
 
         return jsonify({
-            "summary": final_result_json.get("short_summary", ""),
+            "summary": final_result_json.get("user", {}).get("short_summary", ""),
             "details": final_result_json,
             "analyzedPhotos": len(per_photo_results),
             "summaryId": str(summary_id),
             "progress": analysis_progress,
-            "perPhotoResults": {
-                str(pid): {
-                    "filename": result["photo_info"]["filename"],
-                    "chunkCount": result["chunk_count"],
-                    "analysis": result["analysis"]
-                }
-                for pid, result in per_photo_results.items()
-            }
+            "perPhotoResults": per_photo_results,
         }), 200
 
     except Exception as e:
