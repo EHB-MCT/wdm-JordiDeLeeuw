@@ -580,11 +580,31 @@ def build_admin_metrics_from_ocr(ocr_texts):
         return metrics
 
     # Timestamp leakage (00-23h) from time-like patterns
-    # Examples: 13:45, 13h45, 13:45:22, 9:01, 09:01
-    time_pat = re.compile(r"\b(?P<hour>[01]?\d|2[0-3])\s*(?:[:h]\s*[0-5]\d)(?::\s*[0-5]\d)?\b")
+    # Examples we want to catch reliably:
+    # - 13:45, 9:01, 09:51
+    # - 13h45, 13 h 45, 13u45
+    # - 13:45:22
+    # OCR sometimes returns weird spacing, so we allow optional spaces.
+    time_pat = re.compile(
+        r"\b(?P<hour>[01]?\d|2[0-3])\s*(?:[:hHuU]\s*[0-5]\d)(?::\s*[0-5]\d)?\b"
+    )
+
     for m in time_pat.finditer(combined):
-        h = int(m.group("hour"))
-        metrics["timestampLeakage"][h]["count"] += 1
+        try:
+            h = int(m.group("hour"))
+            metrics["timestampLeakage"][h]["count"] += 1
+        except Exception:
+            continue
+
+    # Also count standalone hour tokens like "11h" / "11u" that sometimes appear without minutes.
+    # We intentionally do NOT count bare numbers like "11" because that would explode false positives.
+    hour_only_pat = re.compile(r"\b(?P<hour>[01]?\d|2[0-3])\s*[hHuU]\b")
+    for m in hour_only_pat.finditer(combined):
+        try:
+            h = int(m.group("hour"))
+            metrics["timestampLeakage"][h]["count"] += 1
+        except Exception:
+            continue
 
     # Social context leakage
     handle_pat = re.compile(r"@([A-Za-z0-9_]{2,})")
@@ -762,15 +782,58 @@ def analyze_photos():
         if len(combined_text) > max_chars:
             combined_text = combined_text[:max_chars]
 
-        summary_prompt = f'''You summarize OCR text from multiple screenshots.
+        # Build a more useful, user-facing summary.
+        # We include a few extracted hints so the model has something concrete to work with.
+        import re
+
+        # Extract up to ~8 time matches (for usefulness only)
+        time_matches = []
+        time_pat2 = re.compile(r"\b([01]?\d|2[0-3])\s*(?:[:hHuU]\s*[0-5]\d)(?::\s*[0-5]\d)?\b")
+        for m in time_pat2.finditer(combined_text):
+            time_matches.append(m.group(0).replace(" ", ""))
+            if len(time_matches) >= 8:
+                break
+
+        # Extract some likely names/entities: sequences of Capitalized words (e.g., "DE LEEUW Jordi")
+        name_matches = []
+        name_pat2 = re.compile(r"\b(?:[A-Z]{2,}|[A-Z][a-z]+)(?:\s+(?:[A-Z]{2,}|[A-Z][a-z]+)){0,2}\b")
+        # Filter out common UI words so we don't flood the model
+        ui_stop = set(["Chat", "Teams", "Assignments", "Calendar", "More", "Recent", "Unread", "Mentions", "Favorites", "Chats", "Activity", "You"])
+        for m in name_pat2.finditer(combined_text):
+            cand = m.group(0).strip()
+            if len(cand) < 3:
+                continue
+            if cand in ui_stop:
+                continue
+            # Skip things that are clearly not names
+            if any(ch.isdigit() for ch in cand):
+                continue
+            name_matches.append(cand)
+            if len(name_matches) >= 8:
+                break
+
+        hints_block = ""
+        if time_matches:
+            hints_block += f"Detected times: {', '.join(time_matches)}\n"
+        if name_matches:
+            hints_block += f"Detected names/entities: {', '.join(name_matches)}\n"
+
+        summary_prompt = f'''You summarize OCR text from multiple screenshots for an end-user.
 
 INSTRUCTIONS:
 - Return ONLY valid JSON. No preamble. No explanation. No markdown.
 - Output must start with "{{" and end with "}}".
-- Keep short_summary natural human text, 1-3 sentences.
+- short_summary must be useful, specific, and not generic.
+- Write 4-6 sentences.
+- Mention what kind of content it looks like (e.g., chat list, email, receipt, schedule).
+- If the text contains names/times, include a few examples.
+- If the text suggests privacy-sensitive content, mention that briefly.
 
 Return this JSON structure:
 {{"short_summary": ""}}
+
+Helpful extracted hints (you can use these):
+{hints_block}
 
 OCR text:
 {combined_text}'''
