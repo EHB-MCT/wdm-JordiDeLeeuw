@@ -29,6 +29,5 @@ https://standardjs.com/rules.html
 - for multi-line if statements, use curly braces
 - always handle the err function parameter.
 - declare browser globals with a /* global */ comment.
-
 and so on
 

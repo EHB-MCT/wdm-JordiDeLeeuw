@@ -1,0 +1,104 @@
+OPENCODE PROMPTS -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1) can we update my Flask + Mongo auth (auth_backend.py + auth_routes.py): add bcrypt hashing on register, verify on login, use Mongo _id as userId in register/login responses, keep it modular and beginner-friendly, and update requirements.txt if needed
+2) can we replace App.jsx with a beginner-simple Auth page (Vite + React): toggle login/register, forms + checkbox for admin, show backend JSON response, loading state, fetch with proper error handling, no routing/admin pages yet, API base from VITE_API_BASE or fallback http://localhost:5050, update App.jsx (optional App.css), no extra deps, include a short run note about VITE_API_BASE (Docker vs local)
+3) im getting "Failed to fetch" when registering from frontend in Docker (Vite + Flask + Mongo). can we list likely causes (CORS, wrong base URL, container hostname, port mapping, mixed content), how to confirm with devtools + docker logs + curl/Postman, then give the single most probable fix first
+4) can we add show/hide password icons to login + register forms: toggle type password/text, icon inside input on right, works for password + confirmPassword, minimal CSS, no UI library, keep API logic as-is
+5) can we update uploads to store files in MongoDB per authenticated user (no /uploads on disk), support multi-file POST /api/photos, GET /api/photos list with metadata, GET /api/photos/:id with auth and ownership checks; frontend should fetch and show a gallery with real thumbnails, keep multi-upload, and add a visible "Next" button (no handler yet)
+6) can we fix the gallery to render actual images (not placeholders): add GET /api/photos/:id/file with correct Content-Type, return imageUrl in GET /api/photos or fetch blobs if auth headers are needed; update frontend to use <img> or object URLs and clean up
+7) can we update the user dashboard flow so clicking "Next" processes ALL photos: run OCR, store extractedText/status in MongoDB, return summary JSON, then show status + extractedText per photo and a Results section; keep auth and UI minimal
+8) can we add real-time progress to "Next" processing: per-photo statuses (received/extracting/done/error), a global progress bar, polling /api/photos/status every 1-2s, stop polling when complete, and show clear errors for zero results
+9) can we add a "Clear list" button to delete all user photos: confirm, call DELETE /api/photos, reset gallery/results/progress, disable during processing, keep auth safe
+10) can we fix UI flicker after processing by stopping polling on terminal states, using isProcessing flag, avoiding unnecessary setState, stable keys, and temporarily add debug logs to confirm polling stops
+11) can we fix the white screen crash: check console errors, trace the exact component/line, explain the trigger, and apply the minimal fix (undefined handlers/imports, render crashes, useEffect loops, missing props) so the dashboard renders again
+12) can we fix the Dashboard crash: handleClearAll is undefined (Dashboard.jsx). either define handleClearAll or rename onClick to the correct handler so there are zero undefined references; temporary implementation is ok, just prevent the white screen
+13) can we implement a single source of truth Photo model in MongoDB (image data + metadata + EXIF + OCR + pipeline placeholders), enforce GPS opt-in rules, add/ensure /api/photos, /api/photos/:id/file, /api/photos/process-all, and keep auth + UI minimal
+14) can we fix "Failed to fetch photos" for GET /api/photos: confirm final URL, check Network/CORS/ports, ensure backend route exists, align base URL or Vite proxy, and keep upload working
+15) can we fix upload returning "Invalid response from server": ensure backend always returns JSON (201 on success, JSON error on failure), log raw response in frontend, and fix any base URL/route mismatch
+16) can we fix upload 500 with empty text/plain response: find exact backend crash via logs, add try/catch, return JSON on error, handle optional EXIF/dimension/hash failures gracefully, and validate req.files/userId
+17) can we fix backend KeyError: 'originalFilename' by adding safe fallbacks in get_user_photos, enforcing schema on upload, and adding a simple migration to backfill missing originalFilename
+18) can we fix auth register/login returning Invalid response (non-JSON): inspect backend logs for crashes, add try/except + JSON errors, ensure route paths match frontend, and confirm register/login return JSON (200/201)
+19) can we integrate Ollama (llama3) for post-OCR user analysis: add docker service + helper, POST /api/photos/analyze with strict JSON prompt, store userSummary, add Analyze button with loading + results, and return JSON errors on failure
+20) can we fix the Analyze button not clickable: inspect disabled/onClick conditions, log state values, identify the exact cause, and apply the minimal fix so it enables at the right time
+21) can we show the full Analyze output: no extra text, render short_summary separately and full JSON in a scrollable <pre>, and log raw LLM response + parsed JSON
+22) can we fix Ollama timeouts: verify ollama URL/model, check logs/latency, adjust timeouts/retries/warmup/prompt size or model, return JSON errors, and show clear UI status messages
+23) can we fix Analyze causing Mac overheating: trace prompt size, request count, model loading, token limits, timeouts, and double-triggers; reduce resource usage and ensure one request per click with clear logging
+24) can we locate OCR logic and move it into analyze_text.py (if empty), then make backend call analyze_text.py and explain where OCR happens
+25) can we enforce strict JSON from Ollama: add prompt rules, parse/validate with fallback substring, retry once with stricter prompt, return JSON error if invalid, and render parsed fields + raw JSON in UI
+26) can we replace truncation with chunked LLM analysis: chunk per photo (1000 chars, overlap), cap photos/chunks, merge/dedupe arrays, produce per-photo + final summary, store results, and keep locks/timeouts
+27) can we fix Analyze returning HTML (Unexpected token '<'): trace request URL/response, find source (dev server/backend error/redirect), and ensure analyze returns JSON only
+28) can we diagnose (no code changes) why Analyze spikes CPU/heat: measure request count, model behavior, prompt size/chunks, backend control flow, container usage, and explain root cause without proposing fixes
+29) can we prevent overheating by capping Ollama CPU: enforce compose CPU limits + thread/parallelism limits, process photos sequentially with pacing, keep progress UI, and verify via docker stats
+30) can we verify the Docker CPU limit is actually enforced (deploy vs compose): replace swarm-only limits with compose-enforced limits and show how to confirm with docker stats
+31) can we fix analyze returning "no photos with extracted text" even when UI shows OCR: inspect Mongo fields, compare backend filter vs frontend display, standardize on ocr.extractedText, and migrate old fields
+32) can we make Analyze fully observable: per-photo statuses (queued/processing/sent_to_llm/llm_failed/fallback_used/completed), counters, logs, and a clear UI progress list + copy so it never looks idle
+33) can we update existing CPU cap to 2.5 and Ollama timeout to 240s (no new systems), verify enforcement, and report other fallback causes
+34) can we create a minimal admin-only /admin page with placeholder stats, access denied for non-admins, and only show the admin link for admins
+35) can we implement basic admin stats (GET /api/admin/stats) and render real counts on /admin with loading/error states, admin-only on both backend and UI
+36) can we fix /admin white screen (loading undefined): add missing state, safe rendering, and keep admin gating intact
+37) can we fix inconsistent admin auth: use /api/me as single source of truth, align backend admin checks, and avoid flipping admin false on generic fetch errors
+38) can we fix admin registration returning Invalid response: capture logs, fix root cause, and always return JSON on register (admin + non-admin)
+39) can we fix admin_routes.py crashes (Blueprint order + check_auth signature) so /api/admin/stats returns JSON and backend stays up
+40) can we fix /api/me crashing (check_auth undefined): import/call correctly, return JSON 200/401, and align check_auth usage across routes
+41) can we fix /api/me crash for real: locate check_auth definition, import or replace with the same auth used by /api/photos, ensure correct signature, return JSON 200/401, and fix any other incorrect check_auth calls
+42) can we fix admin verification still broken (500 on /api/me): apply the smallest clean fix so /api/me always returns JSON using the same auth as working routes, and verify admin gating works
+43) can we fix /api/me crashing with NameError/UnboundLocalError by making check_auth available at module scope (no inner imports), keep header-based auth, and return JSON always
+44) can we expand the Admin Dashboard into real analytics (backend stats + trends + frontend charts + privacy section) without breaking existing flows
+45) can we auto-redirect admins to /admin after login (and optionally after register) using isAdmin, without breaking normal user flow or admin route protection
+46) can we fix admin access randomly breaking by using /api/me as the single source of truth and aligning headers/admin checks everywhere
+47) can we fix AdminDashboard.jsx crash (fetchStats undefined): reuse existing fetch logic in handleRetry so "Try Again" works without changing auth
+48) can we fix /api/admin/stats returning 403 even when /api/me says admin: align admin check with /api/me and add minimal debug logging
+49) can we update the Admin Dashboard UI with 4 demo charts (no backend changes), 2x2 grid above the fold, and a Demo/Live toggle
+50) can we fix AdminDashboard charts not showing: find why they’re not rendering and apply the minimal fix so charts appear again
+51) can we fix AdminDashboard crash: renderBarChart is not defined (AdminDashboard.jsx ~line 110). locate where renderBarChart should be defined, then either rename the call, re-add the function, or move it into scope; verify no other render helpers are undefined and reload /admin without crashes
+52) can we add Recharts and rebuild the 4 AdminDashboard charts with demo data only (no backend changes): install recharts, render 4 charts in a fixed 2x2 grid with explicit heights, and fix any retry handler that calls an undefined fetchStats
+53) can we validate whether the current 4 charts match the intended privacy insights (location exposure, screenshot vs camera, sensitive text breakdown, sensitivity score), report mismatches, and then minimally adjust chart labels/data to align without changing layout/auth/backends
+54) can we replace the 4 AdminDashboard charts with OCR-text-only privacy risk charts (demo data, Recharts, fixed 2x2 above the fold): timestamp leakage heatmap, social context leakage bar, communication tone risk chart, and financial signal leakage donut; ensure all render and remove outdated chart titles/data. also replace any old “Sensitive Pattern Breakdown” card with “Location Leakage Signals in OCR Text” (explicit keywords / travel route / none), keep the improved profanity/tone chart with a short definition box + disclaimer, add a caption, and make sure all chart helpers are defined and in scope
+55) can we update the LLM/analysis pipeline to output the exact JSON we need for (A) user summary + key findings and (B) admin “dark signals” charts, without breaking existing safeguards or old fields. context: Flask backend, existing analyze flow calls Ollama, frontend admin charts are demo for now, OCR text only. goals: strict JSON only; userSummary.summary2to3Sentences (2–3 sentences) + keyFindings (max 3 bullets); perPhotoSignals per photoId with timestampHoursDetected (0–23), socialSignals {relationshipLabel, handles, emails, phoneNumbers, namedEntities}, professionalLiabilitySignals {profanity, aggression, shouting}, locationSignals {explicitLocationKeywords, travelRouteContext, noLocation}, and debug.excerpts (up to 2 snippets). optional adminAggregates with timestampLeakageByHour and counts for social/professional/location. meta: analyzedPhotos, usedFallback, llmDurationMsTotal, perPhotoLlmDurationMs. keep backward compatibility by retaining old fields but treat new fields as source of truth. strict output rules: JSON only, no markdown/prose; validate JSON, retry once with “fix JSON” prompt, then fallback. fallback: regex-based detection for the same booleans + a safe user summary (2–3 sentences + up to 3 bullets). detection rules: timestamp hours from time patterns; relationship labels (EN/NL), handles, emails, phone patterns, named entities; profanity/aggression/shouting; location keywords + travel context; noLocation only if both false. backend tasks: update prompt + parser in analyze flow, add validation + retry + fallback, add timing logs per photo and total, always return JSON. frontend note: keep demo mode; in live mode use adminAggregates if present, otherwise compute from perPhotoSignals. do NOT change docker compose or remove safeguards (sequential processing, concurrency=1, progress UI, photo limits). verification: analyze 2 photos, confirm schema + perPhotoSignals entries, adminAggregates match, fallback only on real failures. deliverable: list files/sections updated and show one redacted JSON example
+56) can we fix the fallback crash in create_fallback_analysis (TypeError: bool is not iterable) so /api/photos/analyze returns JSON even when Ollama times out; fix only the minimal line and any similar boolean any()/all() misuse
+57) can we increase Ollama timeout to 480s per photo and keep fallback stable; ensure one photo failure doesn’t abort the job, and only add safe OCR truncation if prompt is too large
+58) can we fix analysis never finishing (endless polling): trace progress state updates, add logging, align backend progress fields with frontend polling stop conditions, and ensure terminal states are set even on failure
+59) can we rebuild the end-to-end pipeline to be deterministic (upload → OCR → analyze → summary → frontend) with clear job tracking and consistent Mongo schema, fix stuck 409 jobs + endless analysis-progress, ensure latest summary matches newest jobId, fix Vite proxy routing, and include a curl test script with expected HTTP codes; keep changes minimal and no docker compose down
+60) can we rebuild the pipeline with strict acceptance criteria: jobs never stuck (timeout safety), analyze uses latest OCR only, summaries always match newest jobId, /api routes all hit the right backend port, resultJson matches schema everywhere, and provide a full run/test checklist with exact commands and expected responses
+
+
+CODEX PROMPTS ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1) can we make is so the llama result JSON follow this exact structure:
+{
+  "user": {
+    "short_summary": "string"
+  },
+  "admin": {
+    "timestampLeakage": [
+      { "hour": 0, "count": 0 },
+      ...
+      { "hour": 23, "count": 0 }
+    ],
+    "socialContextLeakage": {
+      "relationshipLabels": 0,
+      "handles": 0,
+      "emails": 0,
+      "phonePatterns": 0,
+      "nameEntities": 0
+    },
+    "professionalLiabilitySignals": [
+      { "name": "Aggression Hits", "count": 0 },
+      { "name": "Profanity Hits", "count": 0 },
+      { "name": "Shouting Hits", "count": 0 }
+    ],
+    "locationLeakageSignals": [
+      { "name": "Explicit location keywords", "count": 0 },
+      { "name": "Travel/route context", "count": 0 },
+      { "name": "No location signals", "count": 0 }
+    ]
+  }
+}
+2) can we add rules: user only gets short_summary, admin gets full admin object, no extra keys, no markdown or explanations
+3) can we add timestamp rules: detect HH:MM or H:MM, count all occurrences per hour, ignore dates without time
+4) can we add social context rules: count emails, @handles, phone patterns, relationship labels, and full names; do not invent entities
+5) can we add professional liability rules: aggression + profanity (EN/NL/FR), shouting counts ALL CAPS and !!/!!!
+6) can we add location leakage rules: explicit location keywords + travel/route context, and if none increment "No location signals"
+7) Can we fix the folder structure to match conventions — one pass for backend, one pass for frontend.  
+8) Can we review the backend and modularize oversized files (e.g., split upload_routes into smaller modules)? The backend should be more modular overall.  
+9) Can we do the same for the frontend: optimize and modularize the code, especially the user and admin dashboards which are too large.  
+10) can we add Dutch comments across the codebase (backend routes/services/utils, frontend utils/styles/pages/hooks/context/components, including user/admin dashboards and route guards).
+11) can we add upload helper text (“limit to 3 images”) and a cancel/remove selected images button.

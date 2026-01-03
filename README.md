@@ -1,27 +1,32 @@
-# Screenshot text extractor - Portfolio
+# Screenshot Insight Dashboard - Portfolio
 
 ## description
 
-Dit project helpt mensen om hun screenshots op te ruimen door automatisch tekst uit hun afbeeldingen te halen.  
-De tool toont welke informatie er in je screenshots zit, soms zelfs gevoelige data waarvan je je niet bewust was.  
-Het idee is om op een speelse manier te tonen hoeveel je eigenlijk deelt zonder het te beseffen.
+Dit project helpt mensen om hun screenshots op te ruimen door automatisch tekst uit afbeeldingen te halen en die inhoud te analyseren.  
+Je kan screenshots uploaden, OCR laten draaien, en daarna een samenvatting + soms privacy-indicatoren krijgen.  
+Via grafieken wordt zichtbaar welke soorten informatie meekomen in je screenshots, zonder expliciet te tonen wat je precies deelt.
 
 ## features
 
-- Upload screenshots via een kleine webinterface (in opbouw)
-- Herkent tekst uit afbeeldingen met behulp van **Tesseract OCR**
-- Geeft de herkende tekst terug als resultaat
-- Draait volledig in **Docker containers** (frontend + backend)
-- Simpel te testen via **Postman** of een lokaal formulier
+- Login en registratie (met admin-rollen)
+- Upload van meerdere screenshots met optionele GPS opt-in
+- OCR pipeline met statusupdates (received/extracting/done/error)
+- Analyse van OCR-tekst met **Ollama (llama3)** voor samenvatting
+- Admin dashboard met live statistieken en grafieken (Recharts)
+- Gebruikersdashboard met voortgang en resultaten
+- Volledig containerized via **Docker Compose** (frontend, backend, MongoDB, Ollama)
 
 ## current technologies
 
 - Python 3.11
-- Flask
-- pytesseract
-- Pillow (voor beeldverwerking)
-- Node.js (Vite + React)
-- Docker & Docker Compose
+- Flask + Flask-CORS
+- MongoDB (pymongo)
+- pytesseract + Pillow (OCR + beeldverwerking)
+- bcrypt (wachtwoord hashing)
+- Ollama (llama3) + requests (LLM calls)
+- React 19 + Vite + React Router
+- Recharts (admin grafieken)
+- Docker + Docker Compose
 
 ## backend sources
 
