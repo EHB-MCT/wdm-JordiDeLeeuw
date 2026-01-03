@@ -1,3 +1,4 @@
+# Importeer user-gerelateerde helpers
 from services.users import (
     hash_password,
     verify_password,
@@ -5,6 +6,7 @@ from services.users import (
     get_user_by_id,
     create_user,
 )
+# Importeer foto-gerelateerde helpers
 from services.photos import (
     extract_exif,
     extract_gps_coords,
@@ -19,7 +21,9 @@ from services.photos import (
     migrate_missing_original_filenames,
     update_photo_pipeline_result,
 )
+# LLM-query helper
 from services.llm import query_ollama
+# Analyse-helpers
 from services.analysis import (
     get_photos_for_analysis,
     get_photos_for_analysis_limited,
@@ -29,6 +33,7 @@ from services.analysis import (
     get_analysis_progress,
     initialize_analysis_status,
 )
+# Admin-statistieken helpers
 from services.admin_stats import (
     check_admin_status,
     get_admin_stats,
@@ -37,6 +42,7 @@ from services.admin_stats import (
     get_admin_analyses_overview,
 )
 
+# Exporteer een gecureerde set van functies voor externe imports
 __all__ = [
     "hash_password",
     "verify_password",

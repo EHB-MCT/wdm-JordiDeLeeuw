@@ -4,6 +4,7 @@ from db import users, photos, summaries
 
 
 def check_admin_status(user_id: str) -> bool:
+    # Controleer of een gebruiker adminrechten heeft
     try:
         user = users.find_one({"_id": ObjectId(user_id)})
         if user:
@@ -17,6 +18,7 @@ def check_admin_status(user_id: str) -> bool:
 
 
 def get_admin_stats() -> dict:
+    # Bouw algemene adminstatistieken op
     try:
         stats = {}
 
@@ -113,6 +115,7 @@ def get_admin_stats() -> dict:
 
 
 def get_admin_trends(days: int = 7) -> dict:
+    # Haal trenddata per dag op voor de gekozen periode
     try:
         start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
 
@@ -188,6 +191,7 @@ def get_admin_trends(days: int = 7) -> dict:
 
 
 def get_admin_ai_aggregated_stats():
+    # Aggregeer AI-gerelateerde metrics over alle samenvattingen
     try:
         aggregated = {
             "totalUsers": int(users.count_documents({})),

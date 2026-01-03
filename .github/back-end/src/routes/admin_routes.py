@@ -1,11 +1,11 @@
 from flask import Blueprint, jsonify, request
 from auth_backend import check_admin_status, get_admin_ai_aggregated_stats, get_admin_trends, get_admin_analyses_overview
 
-# Create admin blueprint
+# Maakt de admin-blueprint aan
 admin_bp = Blueprint("admin", __name__)
 
 def check_auth(request):
-    """Extract user ID from X-User-Id header"""
+    # Haal de user-id uit de X-User-Id header
     user_id = request.headers.get("X-User-Id")
     if not user_id:
         return None
@@ -13,9 +13,9 @@ def check_auth(request):
 
 @admin_bp.route("/api/admin/stats", methods=["GET"])
 def get_admin_stats_endpoint():
-    """Get comprehensive admin statistics - admin only endpoint"""
+    # Haalt adminstatistieken op (alleen voor admins)
     try:
-        # Check authentication
+        # Check authenticatie
         user_id = check_auth(request)
         if not user_id:
             print(f"Admin stats: No user_id provided in headers: {dict(request.headers)}")
@@ -23,7 +23,7 @@ def get_admin_stats_endpoint():
         
         print(f"Admin stats: Received request for user_id: {user_id}")
         
-        # Check admin status
+        # Check adminstatus
         is_admin = check_admin_status(user_id)
         print(f"Admin stats: User {user_id} admin status: {is_admin}")
         
@@ -33,7 +33,7 @@ def get_admin_stats_endpoint():
         
         print(f"Admin stats: Access granted for admin user {user_id}")
         
-        # Get admin stats
+        # Haal admin stats op
         stats = get_admin_ai_aggregated_stats()
         if not stats:
             return jsonify({"error": "Failed to retrieve admin statistics"}), 500
@@ -51,23 +51,23 @@ def get_admin_stats_endpoint():
 
 @admin_bp.route("/api/admin/trends", methods=["GET"])
 def get_admin_trends_endpoint():
-    """Get admin trend data for charts - admin only endpoint"""
+    # Haalt trenddata op voor charts (alleen voor admins)
     try:
-        # Check authentication
+        # Check authenticatie
         user_id = check_auth(request)
         if not user_id:
             return jsonify({"error": "Unauthorized - no user ID provided"}), 401
         
-        # Check admin status
+        # Check adminstatus
         if not check_admin_status(user_id):
             return jsonify({"error": "admin only"}), 403
         
-        # Get days parameter (default to 7)
+        # Lees days parameter (standaard 7)
         days = request.args.get("days", 7, type=int)
         if days < 1 or days > 30:
             return jsonify({"error": "Days parameter must be between 1 and 30"}), 400
         
-        # Get trends data
+        # Haal trenddata op
         trends = get_admin_trends(days)
         if not trends:
             return jsonify({"error": "Failed to retrieve trend data"}), 500
@@ -85,18 +85,18 @@ def get_admin_trends_endpoint():
 
 @admin_bp.route("/api/admin/analyses", methods=["GET"])
 def get_admin_analyses_endpoint():
-    """Get an overview list of all analyses across all users - admin only endpoint"""
+    # Haalt een overzicht op van alle analyses (alleen voor admins)
     try:
-        # Check authentication
+        # Check authenticatie
         user_id = check_auth(request)
         if not user_id:
             return jsonify({"error": "Unauthorized - no user ID provided"}), 401
 
-        # Check admin status
+        # Check adminstatus
         if not check_admin_status(user_id):
             return jsonify({"error": "admin only"}), 403
 
-        # Optional limit (default 100, max 500)
+        # Optionele limit (standaard 100, max 500)
         limit = request.args.get("limit", 100, type=int)
         if limit < 1:
             limit = 1

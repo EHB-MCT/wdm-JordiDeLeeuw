@@ -4,6 +4,7 @@ from db import photos, summaries
 
 
 def get_photos_for_analysis(user_id: str):
+    # Haal alle foto's op die klaar zijn voor analyse
     return list(photos.find({
         "userId": ObjectId(user_id),
         "ocr.status": "done",
@@ -11,6 +12,7 @@ def get_photos_for_analysis(user_id: str):
 
 
 def get_photos_for_analysis_limited(user_id: str, max_photos: int = 20, max_chars: int = 8000):
+    # Haal een gelimiteerd aantal foto's op om resourcegebruik te beperken
     print(f"DEBUG: Looking for photos with userId: {user_id}")
 
     total_user_photos = photos.count_documents({"userId": ObjectId(user_id)})
@@ -49,6 +51,7 @@ def get_photos_for_analysis_limited(user_id: str, max_photos: int = 20, max_char
 
 
 def save_user_summary(user_id: str, photo_ids: list, model_used: str, result_json: dict, short_summary: str):
+    # Sla een samenvatting op voor de gebruiker
     try:
         summary = {
             "userId": ObjectId(user_id),
@@ -69,6 +72,7 @@ def save_user_summary(user_id: str, photo_ids: list, model_used: str, result_jso
 
 
 def get_latest_user_summary(user_id: str):
+    # Haal de meest recente samenvatting op
     try:
         summary = summaries.find_one(
             {"userId": ObjectId(user_id)},
@@ -87,6 +91,7 @@ def get_latest_user_summary(user_id: str):
 
 
 def update_analysis_progress(photo_id: str, status: str, error_message: str = None):
+    # Update de analyse-status voor een foto
     try:
         update_data = {"pipelines.userExtract.status": status}
 
@@ -108,6 +113,7 @@ def update_analysis_progress(photo_id: str, status: str, error_message: str = No
 
 
 def get_analysis_progress(user_id: str):
+    # Haal de analysevoortgang op voor alle foto's van de gebruiker
     try:
         user_photos = photos.find(
             {"userId": ObjectId(user_id)},
@@ -136,6 +142,7 @@ def get_analysis_progress(user_id: str):
 
 
 def initialize_analysis_status(user_id: str):
+    # Zet status van analyseerbare foto's op "queued"
     try:
         result = photos.update_many(
             {

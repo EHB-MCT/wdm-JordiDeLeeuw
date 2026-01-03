@@ -3,12 +3,14 @@ from io import BytesIO
 import auth_backend
 from utils.auth import require_user_id
 
+# Blueprint voor foto-bestandsroutes
 files_bp = Blueprint("files", __name__)
 
 @files_bp.route("/api/photos", methods=["POST"])
 def upload_photos():
     try:
         print("Upload endpoint called")
+        # Haal user-id op uit request en valideer
         user_id, err = require_user_id(request)
         if err:
             print("Upload failed: No user ID")
@@ -20,6 +22,7 @@ def upload_photos():
             print("Upload failed: No files in request")
             return jsonify({"error": "No files uploaded"}), 400
 
+        # Lees de geüploade bestanden en opt-in voor locatie
         files = request.files.getlist("files")
         location_opt_in = request.form.get("locationOptIn", "false").lower() == "true"
 
@@ -37,10 +40,12 @@ def upload_photos():
 
             try:
                 print(f"Processing file: {file.filename}")
+                # Lees binaire data en bepaal MIME type
                 image_data = file.read()
                 mime_type = file.mimetype or "image/jpeg"
                 print(f"File read: {len(image_data)} bytes, MIME type: {mime_type}")
 
+                # Sla foto op in de database
                 photo_id = auth_backend.save_photo(
                     user_id=user_id,
                     original_filename=file.filename,
@@ -50,6 +55,7 @@ def upload_photos():
                 )
 
                 print(f"Photo saved with ID: {photo_id}")
+                # Verzamel de response-data per foto
                 uploaded_photos.append({
                     "id": str(photo_id),
                     "originalFilename": file.filename,
@@ -81,10 +87,12 @@ def upload_photos():
 @files_bp.route("/api/photos", methods=["GET"])
 def get_photos():
     try:
+        # Haal user-id op uit request en valideer
         user_id, err = require_user_id(request)
         if err:
             return err
 
+        # Haal alle foto's van de gebruiker op
         photos = auth_backend.get_user_photos(user_id)
 
         return jsonify({
@@ -104,15 +112,18 @@ def get_photos():
 @files_bp.route("/api/photos/<photo_id>/file", methods=["GET"])
 def get_photo_file(photo_id):
     try:
+        # Haal user-id op uit request en valideer
         user_id, err = require_user_id(request)
         if err:
             return err
 
+        # Haal de foto op en controleer toegang
         photo = auth_backend.get_photo_by_id(photo_id, user_id)
 
         if not photo:
             return jsonify({"error": "Photo not found or access denied"}), 404
 
+        # Stuur de ruwe afbeelding terug
         return send_file(
             BytesIO(photo["imageData"]),
             mimetype=photo["mimeType"],
@@ -132,10 +143,12 @@ def get_photo_file(photo_id):
 @files_bp.route("/api/photos", methods=["DELETE"])
 def delete_all_photos():
     try:
+        # Haal user-id op uit request en valideer
         user_id, err = require_user_id(request)
         if err:
             return err
 
+        # Verwijder alle foto's van de gebruiker
         deleted_count = auth_backend.delete_user_photos(user_id)
 
         return jsonify({

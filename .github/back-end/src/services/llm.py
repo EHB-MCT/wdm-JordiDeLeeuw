@@ -2,6 +2,7 @@ import requests
 
 
 def query_ollama(prompt: str, model: str = "llama3"):
+    # Stuur een prompt naar de lokale Ollama-service
     try:
         prompt_length = len(prompt)
         print(f"LLM REQUEST: Prompt length: {prompt_length} characters, Model: {model}")
@@ -14,6 +15,7 @@ def query_ollama(prompt: str, model: str = "llama3"):
 
         ollama_url = "http://ollama:11434/api/generate"
 
+        # Bouw de request-payload met parameters
         payload = {
             "model": model,
             "prompt": prompt,

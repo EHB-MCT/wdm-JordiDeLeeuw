@@ -8,6 +8,7 @@ from db import photos
 
 
 def extract_exif(image_data: bytes):
+    # Extraheer basis-EXIF metadata uit de afbeelding
     try:
         img = Image.open(io.BytesIO(image_data))
         exif_data = img._getexif()
@@ -44,6 +45,7 @@ def extract_exif(image_data: bytes):
 
 
 def extract_gps_coords(exif_data):
+    # Extraheer GPS-coordinaten uit EXIF data
     try:
         if not exif_data or "GPSInfo" not in exif_data:
             return None, None
@@ -73,10 +75,12 @@ def extract_gps_coords(exif_data):
 
 
 def calculate_sha256(image_data: bytes) -> str:
+    # Bereken een SHA-256 hash van de afbeelding
     return hashlib.sha256(image_data).hexdigest()
 
 
 def save_photo(user_id: str, original_filename: str, image_data: bytes, mime_type: str, location_opt_in: bool):
+    # Sla een foto met metadata, EXIF en OCR-status op
     try:
         img = Image.open(io.BytesIO(image_data))
 
@@ -96,6 +100,7 @@ def save_photo(user_id: str, original_filename: str, image_data: bytes, mime_typ
         except Exception as e:
             print(f"Warning: EXIF extraction failed for {original_filename}: {e}")
 
+        # Bewaar GPS alleen als de gebruiker opt-in is
         if exif and exif.get("gpsPresent") and not location_opt_in:
             exif["gpsPresent"] = True
         elif exif and exif.get("gpsPresent") and location_opt_in:
@@ -155,6 +160,7 @@ def save_photo(user_id: str, original_filename: str, image_data: bytes, mime_typ
 
 
 def get_user_photos(user_id: str):
+    # Haal alle foto's van een gebruiker op in omgekeerde datumvolgorde
     user_photos = photos.find({"userId": ObjectId(user_id)}).sort("uploadedAt", -1)
     result = []
     for photo in user_photos:
@@ -177,6 +183,7 @@ def get_user_photos(user_id: str):
 
 
 def get_photo_by_id(photo_id: str, user_id: str):
+    # Haal een specifieke foto op en controleer eigenaar
     try:
         photo = photos.find_one({"_id": ObjectId(photo_id), "userId": ObjectId(user_id)})
         if photo:
@@ -197,10 +204,12 @@ def get_photo_by_id(photo_id: str, user_id: str):
 
 
 def get_photos_for_processing(user_id: str):
+    # Selecteer foto's die nog verwerkt moeten worden
     return list(photos.find({"userId": ObjectId(user_id), "ocr.status": {"$in": ["uploaded", "error"]}}))
 
 
 def update_photo_status(photo_id: str, status: str, extracted_text: str = None, error_message: str = None, processing_meta: dict = None):
+    # Update OCR-status en relevante velden voor een foto
     update_data = {"ocr.status": status}
 
     if status == "done":
@@ -215,6 +224,7 @@ def update_photo_status(photo_id: str, status: str, extracted_text: str = None, 
 
 
 def get_photos_status(user_id: str):
+    # Haal statusoverzicht van foto's op voor een gebruiker
     user_photos = photos.find({"userId": ObjectId(user_id)}).sort("uploadedAt", 1)
     result = []
     for photo in user_photos:
@@ -233,11 +243,13 @@ def get_photos_status(user_id: str):
 
 
 def delete_user_photos(user_id: str):
+    # Verwijder alle foto's van een gebruiker
     result = photos.delete_many({"userId": ObjectId(user_id)})
     return result.deleted_count
 
 
 def migrate_missing_original_filenames():
+    # Vul ontbrekende originalFilename velden op basis van fallback
     try:
         missing_photos = photos.find({"originalFilename": {"$exists": False}})
         updated_count = 0

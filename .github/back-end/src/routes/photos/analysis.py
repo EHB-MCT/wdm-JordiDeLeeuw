@@ -3,6 +3,7 @@ import auth_backend
 import time
 from utils.auth import require_user_id
 
+# Blueprint voor analyse-routes
 analysis_bp = Blueprint("analysis", __name__)
 
 
@@ -18,6 +19,7 @@ def validate_final_result_structure(data):
       }
     }
     """
+    # Valideer de verwachte eindstructuur (user/admin)
     if not isinstance(data, dict):
         return False, "Not an object"
 
@@ -86,6 +88,7 @@ def validate_final_result_structure(data):
 
 def validate_summary_only(data):
     """Validate summary-only JSON: {"short_summary": "..."}"""
+    # Controleer of het een geldige summary-only structuur is
     if not isinstance(data, dict):
         return False
     ss = data.get("short_summary")
@@ -99,6 +102,7 @@ def parse_llm_response(response, mode: str = "summary"):
       - "final": expects the full resultJson structure (user/admin)
     """
     import json
+    # Parseer LLM output naar JSON met validatie
     if not response or not response.strip():
         return None
 
@@ -137,6 +141,7 @@ def parse_llm_response(response, mode: str = "summary"):
 # === Helper functions for admin metrics and final resultJson ===
 
 def _empty_admin_metrics():
+    # Standaard lege metrics met juiste structuur
     return {
         "timestampLeakage": [{"hour": i, "count": 0} for i in range(24)],
         "socialContextLeakage": {
@@ -165,6 +170,7 @@ def build_admin_metrics_from_ocr(ocr_texts):
     """
     import re
 
+    # Bouw deterministische metrics op basis van OCR-tekst
     metrics = _empty_admin_metrics()
 
     combined = "\n".join([t for t in ocr_texts if isinstance(t, str) and t.strip()])
@@ -279,6 +285,7 @@ def build_admin_metrics_from_ocr(ocr_texts):
         - string phrase items count substring occurrences
         Capped to keep dashboards readable.
         """
+        # Tel woorden/phrases en cap om UI leesbaar te houden
         if not text:
             return 0
         total = 0
@@ -401,6 +408,7 @@ def build_admin_metrics_from_ocr(ocr_texts):
 def extract_timestamp_leakage(ocr_texts):
     """Deterministically count time-like strings and bucket them per hour (00-23)."""
     import re
+    # Extraheer tijdslekken en groepeer per uur
     buckets = [{"hour": i, "count": 0} for i in range(24)]
     combined = "\n".join([t for t in ocr_texts if isinstance(t, str) and t.strip()])
     if not combined.strip():
@@ -434,6 +442,7 @@ def extract_name_candidates(ocr_texts, max_candidates: int = 80):
     """
     import re
 
+    # Heuristische extractie van naam-achtige stukken
     combined = "\n".join([t for t in ocr_texts if isinstance(t, str) and t.strip()])
     if not combined.strip():
         return []
@@ -480,6 +489,7 @@ def llm_filter_person_names(candidates, ocr_texts, model: str = "llama3"):
     """
     import json
 
+    # Laat de LLM de naamkandidaten filteren tot echte persoonsnamen
     if not candidates:
         return []
 
@@ -576,6 +586,7 @@ OCR context (for disambiguation):
 
 
 def build_final_result_json(short_summary: str, admin_metrics: dict):
+    # Bouw het finale resultJson met defensieve validatie
     result = {
         "user": {"short_summary": short_summary or ""},
         "admin": admin_metrics or _empty_admin_metrics(),
@@ -595,10 +606,12 @@ def analyze_photos():
     # analyze OCR text using Ollama LLM
     import json
 
+    # Simpele in-memory lock per user om overlap te voorkomen
     # simple in-memory lock to prevent concurrent analyze requests
     if not hasattr(analyze_photos, '_locks'):
         analyze_photos._locks = {}
     try:
+        # Haal user-id op uit request en valideer
         user_id, err = require_user_id(request)
         if err:
             return err
@@ -745,6 +758,7 @@ OCR text:
 
         short_summary = ""
         try:
+            # Vraag de LLM om een korte samenvatting
             llm_resp = auth_backend.query_ollama(summary_prompt, "llama3")
             parsed = parse_llm_response(llm_resp, mode="summary")
             if parsed and parsed.get("short_summary"):
@@ -768,6 +782,7 @@ OCR text:
 
         # Save combined user summary (shortSummary mirrors user.short_summary)
         try:
+            # Sla de samenvatting op in de database
             summary_id = auth_backend.save_user_summary(
                 user_id=user_id,
                 photo_ids=list(per_photo_results.keys()),
@@ -816,7 +831,7 @@ OCR text:
             "details": str(e)
         }), 500
     finally:
-        # clean up the lock
+        # Ruim de lock op
         if hasattr(analyze_photos, '_locks') and 'user_id' in locals() and user_id in analyze_photos._locks:
             del analyze_photos._locks[user_id]
 
@@ -825,6 +840,7 @@ OCR text:
 def get_analysis_progress():
     """Get real-time analysis progress for user's photos"""
     try:
+        # Haal user-id op uit request en valideer
         user_id, err = require_user_id(request)
         if err:
             return err
@@ -897,8 +913,9 @@ def get_analysis_progress():
 
 @analysis_bp.route("/api/photos/summary", methods=["GET"])
 def get_summary():
-    # get latest analysis for user
+    # Haal de laatste analyse voor deze gebruiker op
     try:
+        # Haal user-id op uit request en valideer
         user_id, err = require_user_id(request)
         if err:
             return err
