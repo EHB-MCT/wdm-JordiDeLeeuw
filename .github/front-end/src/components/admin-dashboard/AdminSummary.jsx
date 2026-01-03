@@ -1,0 +1,7 @@
+export function AdminSummary({ totals }) {
+	return (
+		<div className="admin-summary">
+			Users: {totals.totalUsers} • Photos: {totals.totalPhotos}
+		</div>
+	);
+}

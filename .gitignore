@@ -1,8 +1,2 @@
-.github/back-end/output/__pycache__/auth_backend.cpython-311.pyc
-.github/back-end/output/__pycache__/auth_routes.cpython-311.pyc
-.github/back-end/output/__pycache__/upload_routes.cpython-311.pyc
-.github/back-end/output/__pycache__/extract_text.cpython-311.pyc
-
 __pycache__/
-*.pyc__pycache__/
 *.pyc

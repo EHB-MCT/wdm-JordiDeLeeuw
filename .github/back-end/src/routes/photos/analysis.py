@@ -483,6 +483,27 @@ def llm_filter_person_names(candidates, ocr_texts, model: str = "llama3"):
     if not candidates:
         return []
 
+    banned_tokens = {
+        "bestie", "friend", "friends", "boss", "manager", "team", "colleague",
+        "pissed", "fucking", "fuck", "shit", "bullshit", "kill", "killed", "killing",
+        "angry", "mad", "sad", "hate", "hate", "damn", "hell", "wtf",
+    }
+
+    def _is_banned_name(value: str) -> bool:
+        if not value:
+            return True
+        lower = value.strip().lower()
+        if lower in banned_tokens:
+            return True
+        # All-caps emphasis words are rarely names
+        if len(value) >= 4 and value.isupper():
+            return True
+        return False
+
+    filtered_candidates = [c for c in candidates if isinstance(c, str) and not _is_banned_name(c)]
+    if not filtered_candidates:
+        return []
+
     # Provide a small OCR snippet for grounding (avoid huge prompt)
     combined = "\n".join([t for t in ocr_texts if isinstance(t, str) and t.strip()])
     if len(combined) > 3500:
@@ -500,7 +521,7 @@ Return ONLY valid JSON with this shape:
 {{"persons": ["Name 1", "Name 2"]}}
 
 Candidates:
-{json.dumps(candidates, ensure_ascii=False)}
+{json.dumps(filtered_candidates, ensure_ascii=False)}
 
 OCR context (for disambiguation):
 {combined}
@@ -546,6 +567,8 @@ OCR context (for disambiguation):
         if key in seen:
             continue
         seen.add(key)
+        if _is_banned_name(name):
+            continue
         out.append(name)
 
     return out
