@@ -36,6 +36,7 @@ export function Dashboard() {
 		fetchPhotos,
 		handleFileChange,
 		handleUpload,
+		clearSelectedFiles,
 		clearAllPhotos,
 	} = usePhotos({ user });
 
@@ -111,6 +112,7 @@ export function Dashboard() {
 					locationOptIn={locationOptIn}
 					onFileChange={handleFileChange}
 					onUpload={handleUpload}
+					onClearFiles={clearSelectedFiles}
 					onLocationOptInChange={(e) => setLocationOptIn(e.target.checked)}
 				/>
 				<PhotosSection

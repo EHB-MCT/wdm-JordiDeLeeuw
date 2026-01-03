@@ -110,6 +110,14 @@ export function usePhotos({ user }) {
 		setResponse(null);
 	};
 
+	const clearSelectedFiles = () => {
+		// Verwijder de huidige selectie en reset input
+		setFiles([]);
+		setResponse(null);
+		const input = document.getElementById("file-input");
+		if (input) input.value = "";
+	};
+
 	const handleUpload = async (e) => {
 		// Upload bestanden naar de backend
 		e.preventDefault();
@@ -214,6 +222,7 @@ export function usePhotos({ user }) {
 		fetchPhotos,
 		handleFileChange,
 		handleUpload,
+		clearSelectedFiles,
 		clearAllPhotos,
 	};
 }

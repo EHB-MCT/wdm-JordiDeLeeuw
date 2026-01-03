@@ -5,6 +5,7 @@ export function UploadCard({
 	locationOptIn,
 	onFileChange,
 	onUpload,
+	onClearFiles,
 	onLocationOptInChange,
 }) {
 	return (
@@ -27,14 +28,23 @@ export function UploadCard({
 					</div>
 				)}
 
+				<div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#888" }}>
+					For best summary and fastest results, limit to 3 images at a time max.
+				</div>
+
 				<label className="location-optin-label">
 					<input type="checkbox" checked={locationOptIn} onChange={onLocationOptInChange} className="location-optin-checkbox" />
 					<span>Include GPS location data (if available in photos)</span>
 				</label>
 
-				<button type="submit" className="upload-btn" disabled={uploading || files.length === 0}>
-					{uploading ? "Uploading..." : "Upload"}
-				</button>
+				<div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+					<button type="submit" className="upload-btn" disabled={uploading || files.length === 0}>
+						{uploading ? "Uploading..." : "Upload"}
+					</button>
+					<button type="button" className="clear-btn" onClick={onClearFiles} disabled={uploading || files.length === 0}>
+						Cancel selection
+					</button>
+				</div>
 			</form>
 
 			{/* Toon foutmelding indien upload faalt */}
