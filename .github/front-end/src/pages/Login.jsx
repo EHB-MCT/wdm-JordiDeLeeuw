@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import "../styles/Auth.css";
 
+// Basis-URL voor API calls (leeg = zelfde origin)
 const API_BASE = "";
 
 export function Login() {
@@ -19,11 +20,13 @@ export function Login() {
 	const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
 	const handleSubmit = async (e) => {
+		// Verwerk login of registratie
 		e.preventDefault();
 		setLoading(true);
 		setResponse(null);
 
 		try {
+			// Kies endpoint en payload op basis van de mode
 			const endpoint = mode === "login" ? `${API_BASE}/api/login` : `${API_BASE}/api/register`;
 			const body = mode === "login" ? { email, password } : { email, password, confirmPassword, isAdmin };
 
@@ -35,6 +38,7 @@ export function Login() {
 
 			let data;
 			try {
+				// Parseer JSON response
 				data = await res.json();
 			} catch {
 				data = { error: "Invalid response from server" };
@@ -43,6 +47,7 @@ export function Login() {
 			if (res.ok) {
 				setResponse({ success: true, data });
 				// Store admin status and redirect appropriately
+				// Sla gebruikersinfo op in context
 				login({
 					email: data.email,
 					userId: data.userId,
@@ -50,12 +55,14 @@ export function Login() {
 				});
 
 				// Redirect admin to admin dashboard, users to regular dashboard
+				// Stuur door naar het juiste dashboard
 				const redirectPath = data.isAdmin ? "/admin" : "/dashboard";
 				setTimeout(() => navigate(redirectPath), 500);
 			} else {
 				setResponse({ success: false, data });
 			}
 		} catch (error) {
+			// Netwerk- of serverfout
 			setResponse({
 				success: false,
 				data: { error: error.message || "Network error - could not reach server" },
@@ -65,6 +72,7 @@ export function Login() {
 		}
 	};
 
+	// Bepaal of we in login- of register-modus zitten
 	const isLogin = mode === "login";
 
 	return (

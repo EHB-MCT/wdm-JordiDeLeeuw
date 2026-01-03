@@ -20,7 +20,7 @@ body,
 	background: var(--bg);
 }
 
-/* Admin page wrapper */
+/* Admin-pagina wrapper */
 .dashboard,
 .dashboard.page {
 	min-height: 100vh;
@@ -32,7 +32,7 @@ body,
 	box-sizing: border-box;
 }
 
-/* Top bar */
+/* Topbar */
 .admin-nav {
 	display: grid;
 	grid-template-columns: 1fr auto 1fr;
@@ -79,7 +79,7 @@ body,
 	gap: 10px;
 }
 
-/* Buttons */
+/* Knoppen */
 .logout-btn {
 	font-size: 12px;
 	padding: 10px 12px;
@@ -136,7 +136,7 @@ body,
 	color: var(--text);
 }
 
-/* Summary strip */
+/* Samenvattingsbalk */
 .admin-summary {
 	margin-top: 12px;
 	padding: 12px 16px;
@@ -212,7 +212,7 @@ body,
 	color: var(--text);
 }
 
-/* Recharts readability */
+/* Recharts leesbaarheid */
 .recharts-cartesian-axis-tick-value {
 	fill: rgba(15, 23, 42, 0.75);
 }
@@ -223,7 +223,7 @@ body,
 	outline: none;
 }
 
-/* Responsive */
+/* Responsief */
 @media (max-width: 1100px) {
 	.chart-card {
 		grid-column: span 12;

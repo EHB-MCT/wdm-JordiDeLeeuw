@@ -7,6 +7,7 @@ export function AnalysisModal({
 	getAnalysisStatusClass,
 	getAnalysisStatusLabel,
 }) {
+	// Render niets als de modal niet open is
 	if (!open) return null;
 
 	return (
@@ -23,6 +24,7 @@ export function AnalysisModal({
 
 				<div className="processing-modal-note">Analysis may take time. Progress is shown per photo below.</div>
 
+				{/* Samenvatting van de voortgangsstatus */}
 				<div style={{ marginTop: "0.5rem", fontSize: "0.9rem", color: "#bbb" }}>
 					{(() => {
 						const started = Number(analysisCounters?.photos_started || 0);
@@ -68,6 +70,7 @@ export function AnalysisModal({
 					})()}
 				</div>
 
+				{/* Statuslijst per foto */}
 				<div className="processing-status-list" style={{ marginTop: "1rem" }}>
 					{(analysisDetails || []).map((photo, index) => (
 						<div key={photo.id || index} className="processing-status-item">

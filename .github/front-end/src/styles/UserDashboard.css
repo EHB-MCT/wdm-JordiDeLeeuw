@@ -1,4 +1,4 @@
-/* User dashboard uses same "page" background as admin */
+/* User-dashboard gebruikt dezelfde "page" achtergrond als admin */
 .user-dashboard {
 	min-height: 100vh;
 	width: 100%;
@@ -9,7 +9,7 @@
 	color: var(--text);
 }
 
-/* Two-column layout */
+/* Twee-koloms layout */
 .dashboard-columns {
 	margin-top: 14px;
 	display: grid;
@@ -34,7 +34,7 @@
 	color: rgba(15, 23, 42, 0.95);
 }
 
-/* Reuse same topbar feel as admin */
+/* Zelfde topbar-stijl als admin */
 .user-nav {
 	display: grid;
 	grid-template-columns: 1fr auto 1fr;
@@ -77,7 +77,7 @@
 	align-items: center;
 }
 
-/* buttons consistent */
+/* Consistente knoppen */
 .user-dashboard .logout-btn {
 	font-size: 12px;
 	padding: 10px 12px;
@@ -105,7 +105,7 @@
 	background: rgba(255, 255, 255, 1);
 }
 
-/* Main layout */
+/* Hoofdlayout */
 .user-grid {
 	margin-top: 14px;
 	display: grid;
@@ -139,7 +139,7 @@
 	color: var(--muted);
 }
 
-/* Upload zone */
+/* Upload-zone */
 .upload-form {
 	display: grid;
 	gap: 12px;
@@ -203,7 +203,7 @@
 	height: 18px;
 }
 
-/* Primary actions */
+/* Primaire acties */
 .upload-btn,
 .next-btn,
 .analyze-btn,

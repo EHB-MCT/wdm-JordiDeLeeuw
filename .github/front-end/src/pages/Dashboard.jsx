@@ -24,6 +24,7 @@ export function Dashboard() {
 		}
 	}, [user, navigate]);
 	const {
+		// Upload + foto state en handlers
 		files,
 		uploading,
 		response,
@@ -39,11 +40,13 @@ export function Dashboard() {
 	} = usePhotos({ user });
 
 	const { processing, showProcessingModal, processingStatus, handleProcessAll, getProgressPercentage } = useProcessing({
+		// OCR-verwerking status en handlers
 		user,
 		onComplete: fetchPhotos,
 	});
 
 	const {
+		// Analyse state en handlers
 		analyzing,
 		showAnalysisModal,
 		analysisResults,
@@ -60,11 +63,13 @@ export function Dashboard() {
 	} = useAnalysis({ user });
 
 	const handleLogout = () => {
+		// Uitloggen en terug naar login
 		logout();
 		navigate("/");
 	};
 
 	const handleClearAll = async () => {
+		// Verwijder alle foto's na bevestiging
 		const confirmed = window.confirm("Are you sure you want to delete all uploaded photos?");
 		if (!confirmed) return;
 		const result = await clearAllPhotos();
@@ -75,6 +80,7 @@ export function Dashboard() {
 		resetAnalysisState();
 	};
 
+	// Alleen analyseren als alle foto's OCR "done" hebben
 	const canAnalyze = photos.length > 0 && photos.every((photo) => photo.status === "done");
 
 	return (

@@ -1,6 +1,7 @@
 export function UserDashboardNav({ email, onLogout }) {
 	return (
 		<div className="admin-nav">
+			{/* Navigatiebalk voor gebruiker */}
 			<div className="admin-nav-left">
 				<h1>User Dashboard</h1>
 			</div>
@@ -10,6 +11,7 @@ export function UserDashboardNav({ email, onLogout }) {
 			</div>
 
 			<div className="admin-nav-right">
+				{/* Uitloggen */}
 				<button className="logout-btn" onClick={onLogout}>
 					Logout
 				</button>

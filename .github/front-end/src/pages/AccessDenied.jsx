@@ -6,6 +6,7 @@ export function AccessDenied() {
 
 	return (
 		<div className="dashboard">
+			{/* Eenvoudige toegang-geweigerd kaart met terugknop */}
 			<div className="upload-card access-denied-card">
 				<h2 className="access-denied-title">Access denied (admin only)</h2>
 				<p className="access-denied-text">You need administrator privileges to access this page.</p>

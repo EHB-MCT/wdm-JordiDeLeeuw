@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+// Basis-URL voor API calls (leeg = zelfde origin)
 const API_BASE = "";
 
 export function usePhotos({ user }) {
@@ -16,6 +17,7 @@ export function usePhotos({ user }) {
 
 	const fetchImageBlob = useCallback(
 		async (photoId) => {
+			// Haal de afbeelding als blob op en maak een object URL
 			try {
 				const res = await fetch(`${API_BASE}/api/photos/${photoId}/file`, {
 					headers: {
@@ -36,6 +38,7 @@ export function usePhotos({ user }) {
 	);
 
 	const fetchPhotos = useCallback(async () => {
+		// Haal alle foto's van de gebruiker op
 		setLoadingPhotos(true);
 		try {
 			const res = await fetch(`${API_BASE}/api/photos`, {
@@ -60,6 +63,7 @@ export function usePhotos({ user }) {
 					return prev;
 				});
 
+				// Prefetch blobs voor foto's die nog geen URL hebben
 				for (const photo of photosList) {
 					if (!imageUrlsRef.current[photo.id]) {
 						fetchImageBlob(photo.id);
@@ -74,11 +78,13 @@ export function usePhotos({ user }) {
 	}, [user, fetchImageBlob]);
 
 	useEffect(() => {
+		// Eerste load van foto's
 		fetchPhotos();
 		// NOTE: do NOT auto-fetch analysis on mount.
 	}, [fetchPhotos]);
 
 	useEffect(() => {
+		// Houd refs in sync en ruim oude object URLs op
 		imageUrlsRef.current = imageUrls;
 
 		const prev = prevImageUrlsRef.current || {};
@@ -90,6 +96,7 @@ export function usePhotos({ user }) {
 		prevImageUrlsRef.current = imageUrls;
 
 		return () => {
+			// Cleanup bij unmount
 			const current = prevImageUrlsRef.current || {};
 			Object.values(current).forEach((url) => {
 				if (url) URL.revokeObjectURL(url);
@@ -98,11 +105,13 @@ export function usePhotos({ user }) {
 	}, [imageUrls]);
 
 	const handleFileChange = (e) => {
+		// Update geselecteerde bestanden
 		setFiles(Array.from(e.target.files));
 		setResponse(null);
 	};
 
 	const handleUpload = async (e) => {
+		// Upload bestanden naar de backend
 		e.preventDefault();
 
 		if (files.length === 0) {
@@ -114,6 +123,7 @@ export function usePhotos({ user }) {
 		setResponse(null);
 
 		try {
+			// Bouw multipart form-data op
 			const formData = new FormData();
 			files.forEach((file) => {
 				formData.append("files", file);
@@ -139,6 +149,7 @@ export function usePhotos({ user }) {
 
 			let data;
 			try {
+				// Parse response als JSON indien mogelijk
 				data = JSON.parse(responseText);
 			} catch (error) {
 				console.error("Failed to parse JSON:", error);
@@ -146,6 +157,7 @@ export function usePhotos({ user }) {
 			}
 
 			if (res.ok) {
+				// Succes: reset selectie en refresh foto's
 				setResponse(null);
 				setFiles([]);
 				const input = document.getElementById("file-input");
@@ -155,6 +167,7 @@ export function usePhotos({ user }) {
 				setResponse({ success: false, data });
 			}
 		} catch (error) {
+			// Netwerkfout
 			setResponse({
 				success: false,
 				data: { error: error.message || "Network error - could not reach server" },
@@ -165,6 +178,7 @@ export function usePhotos({ user }) {
 	};
 
 	const clearAllPhotos = async () => {
+		// Verwijder alle foto's van de gebruiker
 		try {
 			const res = await fetch(`${API_BASE}/api/photos`, {
 				method: "DELETE",
@@ -174,6 +188,7 @@ export function usePhotos({ user }) {
 			});
 
 			if (res.ok) {
+				// Ruim object URLs op en reset state
 				Object.values(imageUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
 				setImageUrls({});
 				setPhotos([]);

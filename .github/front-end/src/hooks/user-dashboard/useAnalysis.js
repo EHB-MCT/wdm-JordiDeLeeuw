@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+// Basis-URL voor API calls (leeg = zelfde origin)
 const API_BASE = "";
 
 const emptyCounters = {
@@ -22,6 +23,7 @@ export function useAnalysis({ user }) {
 	const analysisPollIntervalRef = useRef(null);
 
 	const stopAnalysisPolling = useCallback(() => {
+		// Stop de polling interval
 		if (analysisPollIntervalRef.current) {
 			console.log("Clearing analysis polling interval");
 			clearInterval(analysisPollIntervalRef.current);
@@ -30,6 +32,7 @@ export function useAnalysis({ user }) {
 	}, []);
 
 	const fetchAnalysisProgress = useCallback(async () => {
+		// Haal analysis progress op van de backend
 		try {
 			const res = await fetch(`${API_BASE}/api/photos/analysis-progress`, {
 				headers: {
@@ -46,6 +49,7 @@ export function useAnalysis({ user }) {
 				const started = Number(counters.photos_started || 0);
 				const processed = Number(counters.photos_completed || 0) + Number(counters.photos_failed || 0) + Number(counters.photos_fallback || 0);
 
+				// Update voortgangsstatus voor de UI
 				setAnalysisProgress((prev) => {
 					const nextStatus = started > 0 && processed >= started ? "finalizing" : "analyzing";
 					return {
@@ -66,12 +70,14 @@ export function useAnalysis({ user }) {
 	}, [user]);
 
 	const startAnalysisPolling = useCallback(() => {
+		// Start polling met vaste interval
 		console.log("Starting analysis progress polling");
 		fetchAnalysisProgress();
 		analysisPollIntervalRef.current = setInterval(fetchAnalysisProgress, 2000);
 	}, [fetchAnalysisProgress]);
 
 	const resetAnalysisState = useCallback((closeModal = false) => {
+		// Reset alle analyse-gerelateerde state
 		setAnalysisResults(null);
 		setShowAnalysis(false);
 		setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: "idle" });
@@ -81,6 +87,7 @@ export function useAnalysis({ user }) {
 	}, []);
 
 	const handleAnalyze = useCallback(async () => {
+		// Start analyse en behandel de response
 		if (analyzing) {
 			console.log("Analysis already in progress, ignoring click");
 			return;
@@ -113,6 +120,7 @@ export function useAnalysis({ user }) {
 			console.log("Photos analyzed:", data.analyzedPhotos);
 
 			if (res.ok) {
+				// Succes: toon resultaten
 				setAnalysisResults(data);
 				setShowAnalysis(true);
 				setAnalysisProgress({ currentPhoto: data.analyzedPhotos, totalPhotos: data.analyzedPhotos, status: "complete" });
@@ -123,6 +131,7 @@ export function useAnalysis({ user }) {
 					setAnalysisCounters(data.progress);
 				}
 			} else {
+				// Fout: toon passende melding
 				setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: "error" });
 				stopAnalysisPolling();
 				setShowAnalysisModal(false);
@@ -139,6 +148,7 @@ export function useAnalysis({ user }) {
 				}
 			}
 		} catch (error) {
+			// Netwerkfout
 			console.error("Failed to fetch analysis:", error);
 			setAnalysisProgress({ currentPhoto: 0, totalPhotos: 0, status: "error" });
 			stopAnalysisPolling();
@@ -150,6 +160,7 @@ export function useAnalysis({ user }) {
 	}, [analyzing, user, startAnalysisPolling, stopAnalysisPolling]);
 
 	useEffect(() => {
+		// Log de analyse-resultaten voor debugging
 		if (!analysisResults) return;
 		if (analysisResults?.error) return;
 		const payload = analysisResults?.details ?? analysisResults;
@@ -157,12 +168,14 @@ export function useAnalysis({ user }) {
 	}, [analysisResults]);
 
 	useEffect(() => {
+		// Cleanup: stop polling bij unmount
 		return () => {
 			stopAnalysisPolling();
 		};
 	}, [stopAnalysisPolling]);
 
 	const analysisPctForUi = useMemo(() => {
+		// Bepaal een percentage op basis van status en counters
 		const stageScore = (status) => {
 			switch (status) {
 				case "pending":
@@ -210,16 +223,19 @@ export function useAnalysis({ user }) {
 	}, [analysisDetails, analysisCounters]);
 
 	const analysisTotalForUi = useMemo(() => {
+		// Totale items voor UI-weergave
 		const analysisStarted = Number(analysisCounters?.photos_started || 0);
 		const analysisFound = Number(analysisCounters?.photos_found || 0);
 		return analysisFound || analysisStarted || (Array.isArray(analysisDetails) ? analysisDetails.length : 0) || 0;
 	}, [analysisCounters, analysisDetails]);
 
 	const analysisProcessedForUi = useMemo(() => {
+		// Verwerkt aantal voor UI-weergave
 		return Number(analysisCounters?.photos_completed || 0) + Number(analysisCounters?.photos_failed || 0) + Number(analysisCounters?.photos_fallback || 0);
 	}, [analysisCounters]);
 
 	const userShortSummary = useMemo(() => {
+		// Haal de korte samenvatting uit de resultaten
 		const details = analysisResults?.details || null;
 		return analysisResults?.summary || details?.user?.short_summary || details?.short_summary || "";
 	}, [analysisResults]);

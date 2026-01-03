@@ -19,6 +19,7 @@ export function PhotosSection({
 }) {
 	return (
 		<div className="photos-section">
+			{/* Lijst van geuploade foto's en acties */}
 			<h2>Your photos ({photos.length})</h2>
 			{loadingPhotos ? (
 				<div className="loading-photos">Loading...</div>
@@ -49,10 +50,12 @@ export function PhotosSection({
 			)}
 
 			<div className="photos-actions">
+				{/* OCR verwerken */}
 				<button className="next-btn" onClick={onProcessAll} disabled={processing || photos.length === 0}>
 					{processing ? "Extracting..." : "Extract"}
 				</button>
 
+				{/* Analyse starten */}
 				<button className="analyze-btn" onClick={onAnalyze} disabled={analyzing || !canAnalyze}>
 					{analyzing ? (
 						<>
@@ -67,11 +70,13 @@ export function PhotosSection({
 					)}
 				</button>
 
+				{/* Alles verwijderen */}
 				<button className="clear-btn" onClick={onClearAll} disabled={processing || photos.length === 0}>
 					Clear all
 				</button>
 			</div>
 
+			{/* Hints wanneer analyse niet beschikbaar is */}
 			{!canAnalyze && !analyzing && photos.length > 0 && (
 				<div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#ff9800" }}>
 					⚠️ Analysis requires photos to have completed text extraction (status: "✓ Done"). Click "Extract" to process photos first.
@@ -82,6 +87,7 @@ export function PhotosSection({
 				<div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#888" }}>Upload photos and click "Extract" to enable analysis.</div>
 			)}
 
+			{/* Analyse-resultaten */}
 			{showAnalysis && analysisResults && (
 				<div className="analysis-section">
 					{analysisResults.error ? (

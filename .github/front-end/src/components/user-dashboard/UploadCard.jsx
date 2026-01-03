@@ -9,6 +9,7 @@ export function UploadCard({
 }) {
 	return (
 		<div className="upload-card">
+			{/* Upload form voor afbeeldingen */}
 			<h2>Upload images</h2>
 			<form onSubmit={onUpload} className="upload-form">
 				<label className="file-input-label">
@@ -36,6 +37,7 @@ export function UploadCard({
 				</button>
 			</form>
 
+			{/* Toon foutmelding indien upload faalt */}
 			{response && !response.success && (
 				<div className="response-box error">
 					<h3>Error</h3>

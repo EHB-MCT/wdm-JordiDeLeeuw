@@ -1,4 +1,5 @@
 export function getPhotoStatusBadgeClass(status) {
+	// Bepaal de CSS-klasse voor de foto-status badge
 	switch (status) {
 		case "done":
 			return "status-badge done";
@@ -16,6 +17,7 @@ export function getPhotoStatusBadgeClass(status) {
 }
 
 export function getPhotoStatusLabel(status) {
+	// Geef een leesbaar label voor de foto-status
 	switch (status) {
 		case "done":
 			return "✓ Done";
@@ -33,6 +35,7 @@ export function getPhotoStatusLabel(status) {
 }
 
 export function getAnalysisStatusLabel(status) {
+	// Geef een leesbaar label voor de analyse-status
 	switch (status) {
 		case "completed":
 			return "✓ Processed";
@@ -54,6 +57,7 @@ export function getAnalysisStatusLabel(status) {
 }
 
 export function getAnalysisStatusClass(status) {
+	// Bepaal de CSS-klasse voor de analyse-status
 	switch (status) {
 		case "completed":
 			return "analysis-status completed";

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+// Basis-URL voor API calls (leeg = zelfde origin)
 const API_BASE = "";
 
 export function useProcessing({ user, onComplete }) {
@@ -9,6 +10,7 @@ export function useProcessing({ user, onComplete }) {
 	const pollIntervalRef = useRef(null);
 
 	const stopPolling = useCallback(() => {
+		// Stop de polling interval
 		if (pollIntervalRef.current) {
 			console.log("Clearing interval:", pollIntervalRef.current);
 			clearInterval(pollIntervalRef.current);
@@ -17,6 +19,7 @@ export function useProcessing({ user, onComplete }) {
 	}, []);
 
 	const fetchStatus = useCallback(async () => {
+		// Haal verwerkingsstatus op van de backend
 		console.log("Fetching status...");
 		try {
 			const res = await fetch(`${API_BASE}/api/photos/status`, {
@@ -46,6 +49,7 @@ export function useProcessing({ user, onComplete }) {
 				console.log("Poll check:", { allDone, hasProcessing, total: newStatus.length });
 
 				if (allDone && !hasProcessing) {
+					// Alles klaar: stop polling en sluit modal
 					console.log("All photos complete - stopping polling");
 					stopPolling();
 					setProcessing(false);
@@ -59,6 +63,7 @@ export function useProcessing({ user, onComplete }) {
 	}, [user, onComplete, stopPolling]);
 
 	const startPolling = useCallback(() => {
+		// Start polling en haal direct status op
 		console.log("Starting polling");
 		fetchStatus();
 		pollIntervalRef.current = setInterval(fetchStatus, 1500);
@@ -66,6 +71,7 @@ export function useProcessing({ user, onComplete }) {
 	}, [fetchStatus]);
 
 	const handleProcessAll = useCallback(async () => {
+		// Start OCR-verwerking voor alle foto's
 		setProcessing(true);
 		setShowProcessingModal(true);
 		setProcessingStatus([]);
@@ -79,6 +85,7 @@ export function useProcessing({ user, onComplete }) {
 			});
 
 			if (res.status === 202) {
+				// Verwerking gestart: start polling
 				await res.json();
 				console.log("Processing started, beginning to poll");
 				startPolling();
@@ -96,6 +103,7 @@ export function useProcessing({ user, onComplete }) {
 			setProcessing(false);
 			setShowProcessingModal(false);
 		} catch (error) {
+			// Netwerkfout
 			alert(error.message || "Network error");
 			setProcessing(false);
 			setShowProcessingModal(false);
@@ -103,12 +111,14 @@ export function useProcessing({ user, onComplete }) {
 	}, [user, startPolling]);
 
 	const getProgressPercentage = useCallback(() => {
+		// Bereken procentuele voortgang op basis van status
 		if (processingStatus.length === 0) return 0;
 		const completed = processingStatus.filter((p) => p.status === "done" || p.status === "error").length;
 		return Math.round((completed / processingStatus.length) * 100);
 	}, [processingStatus]);
 
 	useEffect(() => {
+		// Cleanup bij unmount
 		return () => {
 			console.log("Cleanup - stopping polling");
 			stopPolling();

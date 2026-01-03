@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
+// Basis-URL voor API calls (leeg = zelfde origin)
 const API_BASE = "";
 
 export function AdminRoute({ children }) {
@@ -10,6 +11,7 @@ export function AdminRoute({ children }) {
 	const [isAdmin, setIsAdmin] = useState(false);
 
 	useEffect(() => {
+		// Start verificatie zodra user beschikbaar is
 		if (!loading && user) {
 			console.log("AdminRoute: Verifying admin status for user:", user);
 			verifyAdminStatus();
@@ -19,6 +21,7 @@ export function AdminRoute({ children }) {
 	}, [user, loading]);
 
 	const verifyAdminStatus = async () => {
+		// Verifieer adminstatus via /api/me
 		try {
 			console.log("AdminRoute: Calling /api/me with userId:", user.userId);
 			const res = await fetch(`${API_BASE}/api/me`, {
@@ -48,6 +51,7 @@ export function AdminRoute({ children }) {
 	};
 
 	if (loading || verifying) {
+		// Toon laadscherm tijdens verificatie
 		return (
 			<div className="dashboard">
 				<div className="dashboard-header">
@@ -59,15 +63,18 @@ export function AdminRoute({ children }) {
 	}
 
 	if (!user) {
+		// Niet ingelogd: terug naar login
 		console.log("AdminRoute: No user, redirecting to login");
 		return <Navigate to="/" replace />;
 	}
 
 	if (!isAdmin) {
+		// Geen adminrechten: terug naar dashboard
 		console.log("AdminRoute: User is not admin, redirecting to dashboard");
 		return <Navigate to="/dashboard" replace />;
 	}
 
+	// Admin bevestigd: render kinderen
 	console.log("AdminRoute: Admin confirmed, showing admin dashboard");
 	return children;
 }

@@ -10,6 +10,7 @@ import { chartColors, chartMargin, xAxisCommon } from "../utils/adminDashboardDa
 export function AdminDashboard() {
 	const { user, logout } = useAuth();
 	const {
+		// Data en status voor de admin dashboard
 		error,
 		isVerifiedAdmin,
 		liabilitySignalsData,
@@ -24,6 +25,7 @@ export function AdminDashboard() {
 	} = useAdminData(user);
 
 	if (loading) {
+		// Laadscherm zolang data opgehaald wordt
 		return (
 			<div className="dashboard page">
 				<AdminDashboardNav
@@ -45,6 +47,7 @@ export function AdminDashboard() {
 	}
 
 	if (error) {
+		// Foutmelding bij mislukte data-ophaal
 		return (
 			<div className="dashboard page">
 				<AdminDashboardNav
@@ -69,6 +72,7 @@ export function AdminDashboard() {
 	}
 
 	if (!isVerifiedAdmin) {
+		// Beperk toegang tot admins
 		return (
 			<div className="dashboard page">
 				<AdminDashboardNav
@@ -91,6 +95,7 @@ export function AdminDashboard() {
 
 	return (
 		<div className="dashboard page">
+			{/* Navigatie en samenvatting */}
 			<AdminDashboardNav
 				email={user?.email}
 				modeLabel={modeLabel}
@@ -102,6 +107,7 @@ export function AdminDashboard() {
 			<AdminSummary totals={totals} />
 
 			<div className="charts-grid">
+				{/* Grafiek: tijdstempel-lekkage */}
 				<ChartCard
 					title="Timestamp Leakage"
 					subtitle="How often time-like stamps appear in OCR text"
@@ -121,6 +127,7 @@ export function AdminDashboard() {
 					</div>
 				</ChartCard>
 
+				{/* Grafiek: sociale context-lekkage */}
 				<ChartCard
 					title="Social Context Leakage"
 					subtitle="Identifiers detected in OCR text"
@@ -140,6 +147,7 @@ export function AdminDashboard() {
 					</div>
 				</ChartCard>
 
+				{/* Grafiek: professionele aansprakelijkheidssignalen */}
 				<ChartCard
 					title="Professional Liability Signals"
 					subtitle="Heuristic signals derived from OCR content"
@@ -176,6 +184,7 @@ export function AdminDashboard() {
 					</div>
 				</ChartCard>
 
+				{/* Grafiek: locatie-lekkage signalen */}
 				<ChartCard
 					title="Location Leakage Signals"
 					subtitle="Location context inferred from OCR text"

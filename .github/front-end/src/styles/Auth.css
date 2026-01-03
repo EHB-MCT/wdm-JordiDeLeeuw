@@ -1,4 +1,4 @@
-/* Auth page is centered — NOT global body */
+/* Auth-pagina is gecentreerd — niet de globale body */
 .auth-page,
 .app {
 	min-height: 100vh;
@@ -68,7 +68,7 @@
 }
 
 .auth-input {
-	/* maps to shared .input look without changing your JSX */
+	/* map naar gedeelde .input styling zonder JSX aan te passen */
 	width: 100%;
 	box-sizing: border-box;
 	padding: 12px 12px;
@@ -85,6 +85,7 @@
 }
 
 .password-input-wrapper {
+	/* Wrapper om het wachtwoordveld en toggle te positioneren */
 	position: relative;
 	display: flex;
 	align-items: center;
@@ -99,6 +100,7 @@
 }
 
 .password-toggle {
+	/* Toggle-knop om wachtwoord te tonen/verbergen */
 	position: absolute;
 	right: 10px;
 	border: none;

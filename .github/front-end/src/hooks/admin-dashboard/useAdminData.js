@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { demoData, prettyLabel, safeArray24, safeSignals } from "../../utils/adminDashboardData";
 
+// Basis-URL voor API calls (leeg = zelfde origin)
 const API_BASE = "";
 
 export function useAdminData(user) {
@@ -11,10 +12,12 @@ export function useAdminData(user) {
 	const [useLiveMode, setUseLiveMode] = useState(true);
 
 	const verifyAdminAndFetchStats = useCallback(async () => {
+		// Valideer admin en haal statistieken op
 		setLoading(true);
 		setError(null);
 
 		if (!useLiveMode) {
+			// Demo-modus: gebruik lokale demo-data
 			setIsVerifiedAdmin(true);
 			setStats(demoData);
 			setLoading(false);
@@ -22,6 +25,7 @@ export function useAdminData(user) {
 		}
 
 		try {
+			// Controleer adminstatus via /api/me
 			const meRes = await fetch(`${API_BASE}/api/me`, {
 				headers: { "X-User-Id": user.userId },
 			});
@@ -48,6 +52,7 @@ export function useAdminData(user) {
 
 			setIsVerifiedAdmin(true);
 
+			// Haal live stats op
 			const statsRes = await fetch(`${API_BASE}/api/admin/stats`, {
 				headers: { "X-User-Id": user.userId },
 			});
@@ -67,6 +72,7 @@ export function useAdminData(user) {
 			setStats(live);
 			setError(null);
 		} catch {
+			// Netwerkfout
 			setError("Network error - could not reach server");
 			setIsVerifiedAdmin(false);
 			setStats(null);
@@ -76,6 +82,7 @@ export function useAdminData(user) {
 	}, [useLiveMode, user]);
 
 	useEffect(() => {
+		// Laad data zodra user bekend is of wanneer mode wisselt
 		if (user) verifyAdminAndFetchStats();
 		else {
 			setLoading(false);
@@ -84,19 +91,23 @@ export function useAdminData(user) {
 		}
 	}, [user, useLiveMode, verifyAdminAndFetchStats]);
 
+	// Kies live data of demo-data
 	const dataSource = stats || demoData;
 
 	const totals = useMemo(() => {
+		// Veilig fallbacken op demo totals
 		const totalUsers = typeof dataSource?.totalUsers === "number" ? dataSource.totalUsers : demoData.totalUsers;
 		const totalPhotos = typeof dataSource?.totalPhotos === "number" ? dataSource.totalPhotos : demoData.totalPhotos;
 		return { totalUsers, totalPhotos };
 	}, [dataSource]);
 
 	const timestampHeatmapData = useMemo(() => {
+		// Normaliseer naar 24 items voor de heatmap
 		return safeArray24(dataSource?.timestampLeakage);
 	}, [dataSource]);
 
 	const socialContextData = useMemo(() => {
+		// Zet object om naar chart-vriendelijk array
 		const obj = dataSource?.socialContextLeakage || demoData.socialContextLeakage;
 		return Object.entries(obj).map(([key, count]) => ({
 			category: prettyLabel(key),
@@ -105,13 +116,16 @@ export function useAdminData(user) {
 	}, [dataSource]);
 
 	const liabilitySignalsData = useMemo(() => {
+		// Gebruik fallback bij lege signalen
 		return safeSignals(dataSource?.professionalLiabilitySignals, demoData.professionalLiabilitySignals);
 	}, [dataSource]);
 
 	const locationLeakageData = useMemo(() => {
+		// Gebruik fallback bij lege signalen
 		return safeSignals(dataSource?.locationLeakageSignals, demoData.locationLeakageSignals);
 	}, [dataSource]);
 
+	// Label voor huidige datamodus
 	const modeLabel = useLiveMode ? "Live" : "Demo";
 
 	return {
