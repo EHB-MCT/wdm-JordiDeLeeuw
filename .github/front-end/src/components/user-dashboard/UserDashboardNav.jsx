@@ -3,7 +3,7 @@ export function UserDashboardNav({ email, onLogout }) {
 		<div className="admin-nav">
 			{/* Navigatiebalk voor gebruiker */}
 			<div className="admin-nav-left">
-				<h1>User Dashboard</h1>
+				<h1>CUYS - clean up your screenshots!</h1>
 			</div>
 
 			<div className="admin-nav-middle">

@@ -103,6 +103,10 @@ export function Dashboard() {
 				getAnalysisStatusLabel={getAnalysisStatusLabel}
 			/>
 			<UserDashboardNav email={user?.email} onLogout={handleLogout} />
+			<div className="dashboard-intro">
+				<h2>Welkom bij CUYS</h2>
+				<p>We helpen je je screenshots op te ruimen. Je hoeft alleen te uploaden en je krijgt een samenvatting, zodat je kan beslissen of je ze bewaart of weggooit.</p>
+			</div>
 
 			<div className="dashboard-columns">
 				<UploadCard

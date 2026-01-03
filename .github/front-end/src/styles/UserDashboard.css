@@ -9,6 +9,28 @@
 	color: var(--text);
 }
 
+.dashboard-intro {
+	margin-top: 12px;
+	padding: 12px 16px;
+	background: var(--panel2);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+}
+
+.dashboard-intro h2 {
+	margin: 0 0 6px 0;
+	font-size: 16px;
+	color: rgba(15, 23, 42, 0.95);
+}
+
+.dashboard-intro p {
+	margin: 0;
+	font-size: 13px;
+	color: var(--muted);
+	line-height: 1.4;
+}
+
 /* Twee-koloms layout */
 .dashboard-columns {
 	margin-top: 14px;

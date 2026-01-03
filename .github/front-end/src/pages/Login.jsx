@@ -19,6 +19,32 @@ export function Login() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+	const getErrorMessage = (data) => {
+		const raw = String(data?.error || "").toLowerCase();
+		if (raw.includes("user niet gevonden") || raw.includes("user not found")) {
+			return "User doesn't exist, try registering!";
+		}
+		if (raw.includes("email bestaat al") || raw.includes("email exists")) {
+			return "Email already exists. Try logging in.";
+		}
+		if (raw.includes("verkeerd wachtwoord") || raw.includes("wrong password")) {
+			return "Incorrect password. Try again.";
+		}
+		if (raw.includes("wachtwoorden komen niet overeen") || raw.includes("passwords do not match")) {
+			return "Passwords do not match.";
+		}
+		if (raw.includes("ontbrekende velden") || raw.includes("missing fields")) {
+			return "Please fill in all required fields.";
+		}
+		if (raw.includes("network")) {
+			return "Network error. Please try again.";
+		}
+		if (raw.includes("invalid response")) {
+			return "Server error. Please try again.";
+		}
+		return data?.error || "Something went wrong. Please try again.";
+	};
+
 	const handleSubmit = async (e) => {
 		// Verwerk login of registratie
 		e.preventDefault();
@@ -132,7 +158,11 @@ export function Login() {
 				{response && (
 					<div className={response.success ? "response-box success" : "response-box error"}>
 						<h3>{response.success ? "Success" : "Error"}</h3>
-						<pre>{JSON.stringify(response.data, null, 2)}</pre>
+						{response.success ? (
+							<pre>{JSON.stringify(response.data, null, 2)}</pre>
+						) : (
+							<p>{getErrorMessage(response.data)}</p>
+						)}
 					</div>
 				)}
 			</div>
